@@ -151,6 +151,16 @@ const MIS = {
    Todo esto es opcional y falla en silencio: si el navegador no lo soporta
    (iPhone sin agregar a pantalla de inicio, navegadores viejos) o la persona
    dice que no, la página sigue funcionando igual que siempre. */
+
+/* La función Edge que envía los avisos SE LLAMA "avisar" en la configuración
+   de Supabase, pero al crearla desde el panel web, Supabase le asignó una ruta
+   al azar ("clever-action") en vez de usar ese nombre — el campo "Name" que se
+   ve ahí es solo una etiqueta para humanos, no decide la URL. Si algún día se
+   vuelve a desplegar con un nombre real (por ejemplo con el CLI de Supabase:
+   `supabase functions deploy avisar`), este es el único lugar que hay que
+   actualizar. */
+const RUTA_FUNCION_AVISOS = "clever-action";
+
 const AVISOS = {
   // Los avisos exigen conexión segura. localhost cuenta como segura, y es lo
   // que permite probar todo esto en el computador antes de desplegar.
@@ -167,7 +177,7 @@ const AVISOS = {
   async clavePublica() {
     const guardada = localStorage.getItem("patas_vapid");
     if (guardada) return guardada;
-    const r = await fetch(`${API}/functions/v1/avisar`, {
+    const r = await fetch(`${API}/functions/v1/${RUTA_FUNCION_AVISOS}`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
     });
     const d = await r.json();
@@ -212,7 +222,7 @@ const AVISOS = {
   async avisarCoincidencias(token, codigos) {
     if (!codigos.length) return { enviados: 0 };
     try {
-      const r = await fetch(`${API}/functions/v1/avisar`, {
+      const r = await fetch(`${API}/functions/v1/${RUTA_FUNCION_AVISOS}`, {
         method: "POST",
         headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ token, codigos })
