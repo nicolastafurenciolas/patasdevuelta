@@ -82,6 +82,32 @@ dice tener al animal la describa como prueba de que de verdad lo tiene. Es la de
 contra entregas equivocadas y contra reclamos falsos. No la agregues a ninguna vista
 pública ni a los datos que trae el cruce de coincidencias.
 
+### El formulario cambia según QUIÉN lo llena
+Raza, sexo y edad están **a la vista en el formulario de quien perdió** a su mascota, y
+**dentro del acordeón en el de quien la encontró**. No es inconsistencia:
+
+- Quien perdió a su mascota conoce cada dato y está dispuesto a darlos todos. Esconderlos
+  solo le resta información al cruce y evidencia para verificar la identidad después.
+- Quien la encontró muchas veces no puede saberlos, y **adivinar hace daño activo**: un
+  campo vacío casi no baja el puntaje, uno equivocado lo hunde hasta 53 puntos.
+
+Los campos existen siempre en el DOM (el envío los lee por `id`), solo cambian de sitio.
+
+### Recuperar la publicación sin cuentas: por qué NO hay recuperación por teléfono
+Se consideró y se descartó por inseguro. Cualquiera puede obtener el teléfono de una ficha
+tocando el botón de contacto (`obtener_contacto`), así que "código + teléfono" no prueba
+nada: serviría para que un desconocido se apropiara de una publicación ajena y la ocultara.
+**No la agregues.**
+
+Lo que sí protege el acceso, en orden de resistencia:
+1. **Mandarse el enlace por WhatsApp a uno mismo** (botón en el panel de gestión). Es lo
+   único que sobrevive a que el celular se dañe, se pierda o se cambie.
+2. El evento de calendario, que también lleva el enlace dentro.
+3. `localStorage`, que se pierde al borrar datos del navegador o cambiar de equipo.
+
+Una recuperación de verdad necesita un canal que solo controle el dueño: **el correo**.
+Eso depende de conectar la función de avisos (ver sección 5), que hoy no está conectada.
+
 ### Sin cuentas ni contraseñas
 Cada publicación genera un token de gestión aleatorio (columna `token_gestion`) que
 funciona como enlace secreto de administración (`/g/TOKEN`). No hay login. Registrarse
