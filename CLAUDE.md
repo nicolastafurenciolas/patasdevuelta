@@ -207,6 +207,16 @@ persona sí está mirando**, y cada uno cubre lo que los otros no:
    días"). Es lo único que de verdad le suena a la persona sin servidor, sin cuentas y
    sin costo, y funciona igual en Android y iPhone.
 4. **El aviso en la portada** y el contador de novedades, que ya existían.
+5. **Las coincidencias nuevas marcadas al volver a entrar.** El navegador recuerda qué
+   coincidencias ya vio esa persona y con qué puntaje (`coincidenciasVistas` en
+   `localStorage`), y al volver le señala solo lo que cambió: las fichas nuevas, las que
+   ahora puntúan más, y si alguna es la que más se ha parecido hasta ahora. Es lo más
+   cercano a un aviso que se puede lograr sin servidor.
+
+   **`MIS.guardar()` fusiona, no reemplaza.** Antes rehacía la entrada desde cero, y como
+   `vistaGestionar()` la vuelve a guardar en cada visita, borraba lo que `parchar()`
+   hubiera dejado: el aplazamiento del recordatorio y las coincidencias ya vistas. Si
+   tocas `MIS`, no rompas eso.
 
 No quites ninguno pensando que se repiten: cubren personas distintas. Quien nunca vuelve
 a la portada sí abre su ficha; quien no agenda nada sí contesta un WhatsApp.

@@ -460,3 +460,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
      deslumbre, sin invertirlo (un mapa invertido no se lee). */
   .leaflet-tile{filter:brightness(.82) contrast(1.05) saturate(.9)}
 }
+
+/* ---------- COINCIDENCIAS NUEVAS DESDE LA ÚLTIMA VISITA ---------- */
+.coincidencia--nueva{position:relative; border-color:var(--encontrada); border-width:2px}
+.cinta-nueva{
+  position:absolute; top:-9px; left:10px; background:var(--encontrada); color:#fff;
+  font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+  padding:3px 8px; border-radius:20px; white-space:nowrap;
+}
