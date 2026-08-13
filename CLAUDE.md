@@ -112,14 +112,50 @@ radio se abre con los días transcurridos), tamaño (con tolerancia: un escalón
 diferencia casi no castiga porque la gente estima mal), color (comparado por
 *componentes visuales*, no por igualdad de etiqueta — "manchado" y "negro y blanco"
 cuentan como parecidos), fecha (nadie encuentra un animal antes de que se pierda, con
-2 días de margen por errores al reportar), pelo, sexo y raza cuando existen.
+2 días de margen por errores al reportar), pelo, sexo, raza y collar cuando existen.
 
 Es **simétrico** (`puntuar(a,b) === puntuar(b,a)`) y está calibrado para **preferir
 errar por exceso**: mostrar un candidato de más cuesta tres segundos de mirar una foto;
-perder uno significa una mascota que no vuelve. Se probó con 19 casos manuales
-(incluyendo simetría, casos límite de fecha, colores de la misma familia, sin
-coordenadas, etc.) antes de darlo por bueno. Si tocas esta función, vuelve a pensar en
-esos mismos casos límite.
+perder uno significa una mascota que no vuelve.
+
+**Los castigos no se acumulan.** Cuando hay contradicciones directas se aplica solo el
+castigo más fuerte (`Math.min`), nunca el producto de todos. Multiplicarlos cobraba dos
+veces el mismo error: la señal contradicha ya entra en 0 y baja el promedio por su
+cuenta. Con el producto, un animal encontrado *en el mismo punto y el mismo día* pero
+con tres campos mal llenados caía a 20 puntos y desaparecía de la lista.
+
+**Un dato en blanco vale más que un dato adivinado.** Medido: dejar un campo vacío
+cuesta 0-1 puntos; adivinarlo mal cuesta hasta 53 (color) o 35 (sexo). De ahí sale el
+diseño del formulario — ver la sección "Los formularios piden por observabilidad".
+
+**El collar nunca castiga cuando solo uno de los dos lo menciona.** Los collares se
+caen, o quien recoge al animal se lo quita antes de reportarlo. Solo cuenta como señal
+si ambos reportes lo describen, y se compara por palabras sueltas porque nadie lo
+describe igual ("collar rojo" vs "rojo con placa").
+
+Hay dos suites de pruebas, ambas en Node puro sin tocar la base de datos:
+`node pruebas/cruce.test.js` (20 casos de mano + simulacro de 90 fichas) y
+`node pruebas/adversario.test.js` (34 parejas que **sí** son la misma mascota, cada una
+degradada de una forma realista, midiendo si alcanzan a salir en pantalla contra 10, 30
+y 150 fichas rivales). Si tocas `puntuar()`, corre las dos. `pruebas/algoritmo.js` tiene
+una copia ejecutable de la función y un `verificarSincronia()` que avisa si esa copia se
+desincroniza de `app.js`.
+
+### Los formularios piden por observabilidad, no por importancia
+Los campos del formulario están agrupados según **lo que quien encontró al animal puede
+ver de un vistazo**, no según qué tan valioso sería el dato. Arriba y siempre visibles:
+especie, tamaño, colores, pelo y collar — todo eso se ve sin tocar al animal. En el
+acordeón "Si alcanzaste a fijarte": raza, sexo y edad, con el texto diciendo
+explícitamente que dejarlo en blanco es mejor que adivinar.
+
+No es timidez para pedir datos: es que **adivinar hace daño activo**. Un radio sin tocar
+se envía como `""` y se guarda nulo, así que la señal simplemente no participa en el
+cruce; en cambio un valor equivocado mete un cero *y* dispara un castigo. Quien encuentra
+a un animal no le revisa el sexo ni sabe la raza, y si lo presionamos a llenar todo va a
+inventar. **No conviertas estos campos en obligatorios ni los subas al bloque principal.**
+
+El collar sí subió al bloque principal justamente por lo contrario: se ve de una, es de
+lo más identificador que existe, y el algoritmo lo usa.
 
 ### Alcance nacional, siempre
 33 departamentos y 1.104 municipios de Colombia están embebidos en

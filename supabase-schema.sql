@@ -142,7 +142,7 @@ $$;
 
 -- ---------- PUBLICAR ----------
 create or replace function crear_publicacion(p jsonb)
-returns json language plpgsql security definer set search_path = public as $$
+returns json language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_codigo text; v_token text; v_id uuid; i int := 0;
 begin
