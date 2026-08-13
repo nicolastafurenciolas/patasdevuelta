@@ -122,9 +122,15 @@ const nombreMostrado = m => m.nombre ||
 /* ---------- MEMORIA LOCAL ---------- */
 const MIS = {
   leer() { try { return JSON.parse(localStorage.getItem("patas_mis") || "[]"); } catch { return []; } },
+  /* Fusiona, no reemplaza. Antes rehacía la entrada desde cero cada vez, y como
+     vistaGestionar() la vuelve a guardar en cada visita, se borraba todo lo que
+     parchar() hubiera dejado: el aplazamiento del recordatorio ("Todavía no") y
+     las coincidencias ya vistas. El aviso volvía a salir como si nada. */
   guardar(o) {
+    const previo = MIS.leer().find(x => x.token === o.token) || {};
     const l = MIS.leer().filter(x => x.token !== o.token);
-    l.unshift({ ...o }); localStorage.setItem("patas_mis", JSON.stringify(l.slice(0, 30)));
+    l.unshift({ ...previo, ...o });
+    localStorage.setItem("patas_mis", JSON.stringify(l.slice(0, 30)));
   },
   parchar(token, cambios) {
     localStorage.setItem("patas_mis", JSON.stringify(
@@ -651,6 +657,34 @@ async function buscarCoincidencias(m, { minimo = 26, tope = 24 } = {}) {
     .slice(0, tope);
 }
 
+/* ---------- COINCIDENCIAS YA VISTAS ----------
+   Quien está buscando a su mascota vuelve a entrar una y otra vez, y sin esto
+   la lista se ve idéntica cada vez: no hay forma de notar que entró una ficha
+   que se parece más que todas las anteriores. Guardamos en el teléfono qué
+   coincidencias ya vio y con qué puntaje, y al volver le marcamos solo lo que
+   cambió. Es lo más parecido a un aviso que se puede hacer sin servidor. */
+function novedadesDeCruce(token, lista) {
+  const vistas = (MIS.leer().find(x => x.token === token) || {}).coincidenciasVistas || {};
+  const conocidas = Object.keys(vistas).length;
+
+  const nuevas = lista.filter(c => vistas[c.codigo] == null);
+  // "Subió" = la misma ficha ahora puntúa más porque alguien la corrigió o
+  // completó datos. El margen de 4 evita avisar por ruido de redondeo.
+  const subieron = lista.filter(c => vistas[c.codigo] != null && c.total > vistas[c.codigo] + 4);
+
+  const mejorAntes = conocidas ? Math.max(...Object.values(vistas)) : -1;
+  const mejorAhora = lista.length ? Math.max(...lista.map(c => c.total)) : -1;
+  const mejorQueNunca = conocidas > 0 && mejorAhora > mejorAntes;
+
+  return { nuevas, subieron, mejorAntes, mejorAhora, mejorQueNunca, primeraVez: conocidas === 0 };
+}
+
+function recordarCoincidenciasVistas(token, lista) {
+  const coincidenciasVistas = {};
+  for (const c of lista) coincidenciasVistas[c.codigo] = c.total;
+  MIS.parchar(token, { coincidenciasVistas });
+}
+
 /* ============================================================
    6. PIEZAS DE INTERFAZ
    ============================================================ */
@@ -740,10 +774,11 @@ function tarjeta(m, extra = {}) {
 const rejilla = (filas, extras = {}) =>
   `<div class="rejilla">${filas.map(f => tarjeta(f, extras[f.id] || {})).join("")}</div>`;
 
-function filaCoincidencia(c) {
+function filaCoincidencia(c, marca = "") {
   const b = banda(c.total);
   const foto = fotoPrincipal(c);
-  return `<a class="coincidencia" href="/m/${c.codigo}" data-ruta>
+  return `<a class="coincidencia ${marca ? "coincidencia--nueva" : ""}" href="/m/${c.codigo}" data-ruta>
+    ${marca ? `<span class="cinta-nueva">${esc(marca)}</span>` : ""}
     ${/* Sin la condición, una ficha sin foto generaba <img src=""> y el
           navegador volvía a pedir la página entera y mostraba el ícono roto. */""}
     ${foto ? `<img src="${esc(foto)}" alt="" loading="lazy">`
@@ -894,16 +929,31 @@ async function pintarMias() {
     });
   }
 
-  // marca cuántas novedades tiene cada una
+  /* Marca cada publicación con lo que cambió: pistas sin leer y coincidencias
+     nuevas. Aquí NO se marcan como vistas — eso pasa solo al abrir el panel y
+     ver la lista de verdad. Si se marcaran aquí, con pasar por la portada se
+     perdería el aviso sin haberlo leído. */
   for (const x of mias) {
-    rpc("ficha_gestion", { p_token: x.token }).then(d => {
+    rpc("ficha_gestion", { p_token: x.token }).then(async d => {
       if (!d || !d.mascota) return;
-      const n = d.mascota.pistas_nuevas || 0;
       const nodo = $(`#nov-${CSS.escape(x.codigo)}`);
-      if (nodo && n > 0) {
-        nodo.textContent = n === 1 ? "1 novedad" : `${n} novedades`;
-        nodo.className = "insignia insignia--alta";
-      }
+      if (!nodo) return;
+
+      const pistas = d.mascota.pistas_nuevas || 0;
+      let nuevas = 0, mejorQueNunca = false;
+      try {
+        const cs = await buscarCoincidencias(d.mascota);
+        const nov = novedadesDeCruce(x.token, cs);
+        if (!nov.primeraVez) { nuevas = nov.nuevas.length + nov.subieron.length; mejorQueNunca = nov.mejorQueNunca; }
+      } catch { }
+
+      const partes = [];
+      if (pistas) partes.push(pistas === 1 ? "1 novedad" : `${pistas} novedades`);
+      if (nuevas) partes.push(nuevas === 1 ? "1 coincidencia nueva" : `${nuevas} coincidencias nuevas`);
+      if (!partes.length) return;
+
+      nodo.textContent = mejorQueNunca ? "¡La más parecida!" : partes.join(" · ");
+      nodo.className = "insignia insignia--alta";
     }).catch(() => { });
   }
 }
@@ -1800,10 +1850,37 @@ async function vistaGestionar(token, params) {
             Abrir la más parecida</a>
         </div>` : "";
 
-      $("#coincidencias2").innerHTML = empujon +
+      /* Lo que cambió desde la última vez que entró. Va ARRIBA de la lista y
+         antes de guardar el nuevo estado: si se guardara primero, la novedad
+         se borraría sin que la persona alcanzara a verla. */
+      const nov = novedadesDeCruce(token, cs);
+      // En la primera visita TODO es nuevo: marcarlo sería ruido, no información
+      const idsNuevas = new Set(nov.primeraVez ? [] : nov.nuevas.map(c => c.codigo));
+      const idsSubieron = new Set(nov.primeraVez ? [] : nov.subieron.map(c => c.codigo));
+
+      let aviso = "";
+      if (!nov.primeraVez && (nov.nuevas.length || nov.subieron.length)) {
+        const partes = [];
+        if (nov.nuevas.length) partes.push(nov.nuevas.length === 1
+          ? "1 coincidencia nueva" : `${nov.nuevas.length} coincidencias nuevas`);
+        if (nov.subieron.length) partes.push(nov.subieron.length === 1
+          ? "1 que ahora se parece más" : `${nov.subieron.length} que ahora se parecen más`);
+        aviso = `<div class="aviso aviso--verde">
+          <p style="margin:0 0 6px"><strong>Desde tu última visita: ${partes.join(" y ")}.</strong></p>
+          <p style="margin:0">${nov.mejorQueNunca
+            ? `Y una de ellas es la que <strong>más se ha parecido hasta ahora</strong> (${nov.mejorAhora} de 100). Vale la pena que la abras de primeras.`
+            : "Están marcadas abajo para que no tengas que revisar toda la lista otra vez."}</p>
+        </div>`;
+      }
+
+      $("#coincidencias2").innerHTML = empujon + aviso +
         `<h2 class="seccion__titulo">Revisa estas ${cs.length}</h2>
         <p class="parrafo">Coinciden en zona y características. Míralas una por una: toma tres segundos.</p>
-        ${cs.map(filaCoincidencia).join("")}`;
+        ${cs.map(c => filaCoincidencia(c,
+            idsNuevas.has(c.codigo) ? "Nueva" :
+            idsSubieron.has(c.codigo) ? "Se parece más" : "")).join("")}`;
+
+      recordarCoincidenciasVistas(token, cs);
     }).catch(() => { });
   }
 }
