@@ -62,6 +62,56 @@ const PALABRAS_VACIAS_COLLAR = new Set(["collar", "con", "sin", "de", "del", "la
   "el", "los", "las", "un", "una", "unos", "unas", "que", "por", "para", "creo",
   "tenia", "llevaba", "puesto", "puesta", "color", "algo", "como", "pero"]);
 
+/* Las "señas particulares" son texto libre y son lo más identificador que
+   escribe la gente: "mancha blanca en el pecho", "le falta la cola", "cojea".
+   Dos personas nunca las escriben igual, así que buscamos palabras compartidas.
+
+   Dos reglas hacen que esto sea seguro:
+
+   1) SOLO SUMA, NUNCA RESTA. Si no hay ninguna palabra en común, la señal ni
+      siquiera participa. Es indispensable: quien encuentra al animal muchas
+      veces describe otra cosa ("estaba asustado y con hambre") aunque sea la
+      misma mascota, y eso no puede contar como contradicción.
+
+   2) Se ignoran las palabras que no distinguen a un animal de otro: artículos,
+      verbos comunes, y a propósito TAMBIÉN los colores y los tamaños — esos ya
+      se puntúan en sus propias señales, y contarlos aquí otra vez sería
+      cobrarlos dos veces. */
+const PALABRAS_VACIAS_RASGOS = new Set([
+  // relleno del idioma
+  "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "en", "con",
+  "sin", "por", "para", "que", "se", "su", "sus", "es", "esta", "este", "ese", "esa",
+  "muy", "mas", "pero", "como", "cuando", "donde", "tiene", "tenia", "lleva",
+  "llevaba", "era", "fue", "esta", "estaba", "todo", "toda", "bien", "mal", "casi",
+  "algo", "poco", "solo", "sola", "tambien", "siempre", "ademas", "hacia", "desde",
+  // palabras que describen a cualquier mascota, no a esta
+  "perro", "perra", "gato", "gata", "animal", "mascota", "cachorro", "cachorra",
+  "macho", "hembra", "pequeno", "mediano", "grande", "chiquito", "chiquita",
+  "asustado", "asustada", "sano", "sana", "herido", "herida", "bonito", "bonita",
+  "lindo", "linda", "hermoso", "hermosa", "manso", "mansa", "nervioso", "nerviosa",
+  "calle", "casa", "sucio", "sucia", "flaco", "flaca", "gordo", "gorda", "viejo",
+  "vieja", "joven", "adulto", "pelo", "cuerpo", "parece", "creo",
+  // colores y tamaños: ya tienen su propia señal, contarlos aquí sería doble cobro
+  "negro", "negra", "blanco", "blanca", "gris", "cafe", "canela", "dorado", "dorada",
+  "crema", "naranja", "atigrado", "atigrada", "manchado", "manchada", "tricolor",
+  "marron", "amarillo", "amarilla", "beige", "claro", "clara", "oscuro", "oscura"
+]);
+
+function palabrasDeRasgos(texto) {
+  return new Set(normalizarTexto(texto).split(/[^a-z0-9]+/)
+    .map(p => p.length > 4 && p.endsWith("s") ? p.slice(0, -1) : p)  // manchas → mancha
+    .filter(p => p.length > 3 && !PALABRAS_VACIAS_RASGOS.has(p)));
+}
+
+function parecidoRasgos(a, b) {
+  const A = palabrasDeRasgos(a), B = palabrasDeRasgos(b);
+  if (!A.size || !B.size) return null;
+  let comunes = 0;
+  for (const p of A) if (B.has(p)) comunes++;
+  if (comunes === 0) return null;   // sin nada en común la señal no participa
+  return comunes >= 2 ? 1 : 0.7;    // una palabra es indicio; dos o más ya es mucha casualidad
+}
+
 function parecidoCollar(a, b) {
   const palabras = s => new Set(normalizarTexto(s).split(/[^a-z0-9]+/)
     .filter(p => p.length > 2 && !PALABRAS_VACIAS_COLLAR.has(p)));
@@ -135,6 +185,13 @@ function puntuar(base, cand) {
       if (c === 1) razones.push("collar parecido");
     }
   }
+  if (base.rasgos && cand.rasgos) {
+    const r = parecidoRasgos(base.rasgos, cand.rasgos);
+    if (r != null) {           // null = sin palabras en común: no participa, no castiga
+      senales.push([12, r]);
+      razones.push(r === 1 ? "las señas coinciden" : "una seña coincide");
+    }
+  }
 
   const peso = senales.reduce((a, [w]) => a + w, 0);
   const suma = senales.reduce((a, [w, v]) => a + w * v, 0);
@@ -195,6 +252,6 @@ const dias = (fecha, n) => {
 
 module.exports = {
   ORDEN_TAMANO, COLORES, MAPA_COLOR,
-  distanciaKm, distanciaTexto, parecidoColor, parecidoPaleta, normalizarTexto, parecidoCollar,
+  distanciaKm, distanciaTexto, parecidoColor, parecidoPaleta, normalizarTexto, parecidoCollar, parecidoRasgos,
   puntuar, banda, candidatosPara, coincidenciasDe, dias, verificarSincronia
 };

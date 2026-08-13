@@ -77,6 +77,15 @@ button,input,select,textarea{font:inherit; color:inherit}
 .cabecera__nav a{text-decoration:none; color:var(--tinta-suave); border-bottom:1.5px solid transparent; padding-bottom:2px}
 .cabecera__nav a:hover{color:var(--tinta); border-color:var(--marcador)}
 
+/* En celulares angostos (320-360 px, muy comunes en gama baja) la marca más los
+   tres enlaces no caben en una línea y el menú se salía de la pantalla. Aquí el
+   menú pasa a ocupar su propio renglón completo, alineado a la izquierda. */
+@media (max-width:400px){
+  .cabecera{flex-wrap:wrap; gap:6px 12px; padding:12px 16px}
+  .cabecera__nav{width:100%; gap:14px; font-size:14px; justify-content:flex-start}
+  .cabecera__nav a{padding-bottom:1px}
+}
+
 main{max-width:var(--ancho); margin:0 auto; padding:0 18px 60px}
 
 /* ---------- SIGNATURE: el resaltador ---------- */
@@ -175,7 +184,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
 .opcion input:focus-visible + span{outline:3px solid var(--tinta); outline-offset:2px}
 
 .colores{display:grid; grid-template-columns:repeat(auto-fill,minmax(88px,1fr)); gap:8px}
-.color span{display:flex; align-items:center; gap:7px; padding:8px 10px; font-size:13.5px; border-radius:var(--radio-s)}
+/* min-height 44px: es el objetivo táctil mínimo cómodo en celular. Antes medían
+   38px y son de los controles que más se tocan en todo el formulario. */
+.color span{display:flex; align-items:center; gap:7px; padding:8px 10px; min-height:44px;
+  font-size:13.5px; border-radius:var(--radio-s)}
 .color i{width:17px; height:17px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex:none}
 
 .foto-zona{
@@ -259,6 +271,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
 }
 .coincidencia:hover{border-color:var(--tinta)}
 .coincidencia img{width:66px; height:66px; object-fit:cover; border-radius:8px; flex:none; background:#E7E4D7}
+.coincidencia__sinfoto{width:66px; height:66px; border-radius:8px; flex:none; background:#E7E4D7;
+  display:flex; align-items:center; justify-content:center; font-size:26px; opacity:.5}
 .coincidencia b{display:block; font-family:var(--display); font-size:16px; letter-spacing:-.01em}
 .coincidencia span{font-size:13px; color:var(--tinta-suave); display:block; line-height:1.35}
 .coincidencia__puntaje{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--tinta-suave); text-align:right; flex:none}
@@ -289,7 +303,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
 .pie__aviso{font-size:13.5px; color:var(--tinta-suave); line-height:1.5; margin:0 0 10px}
 .pie__aviso--alerta{color:var(--tinta)}
 
-.volver{display:inline-block; margin:6px 0 4px; font-size:14.5px; color:var(--tinta-suave); text-decoration:none}
+.volver{display:inline-block; margin:2px 0; padding:10px 2px; font-size:14.5px;
+  color:var(--tinta-suave); text-decoration:none}
 .volver:hover{color:var(--tinta)}
 
 .paso{font-family:var(--mono); font-size:12.5px; color:var(--tinta-suave); text-transform:uppercase; letter-spacing:.09em; margin-bottom:4px}
@@ -328,6 +343,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   letter-spacing:-.01em; padding:0 6px; margin-left:-6px}
 .bloque .campo:last-child{margin-bottom:0}
 .campo__error{color:var(--perdida); font-size:13.5px; margin:6px 0 0; font-weight:500}
+
+/* Resalta el campo que falta cuando alguien intenta publicar sin completarlo.
+   Sin esto el único aviso era un mensaje abajo que se iba solo, y en un
+   formulario de varias pantallas la persona no sabía a dónde volver. */
+.campo--falta{
+  outline:2.5px solid var(--perdida); outline-offset:6px; border-radius:var(--radio-s);
+  animation:latido .5s ease-in-out 2;
+}
+@keyframes latido{
+  0%,100%{outline-color:var(--perdida)}
+  50%{outline-color:transparent}
+}
 .nota-pie{font-size:13px; color:var(--tinta-suave); margin:14px 0 0; line-height:1.45}
 #trampa{position:absolute; left:-9999px; width:1px; height:1px; opacity:0}
 
@@ -389,7 +416,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   font-size:10.5px; padding:3px 7px; border-radius:20px}
 .pista--tengo{border-left:4px solid var(--encontrada)}
 .pista__nota{font-size:13px; color:var(--tinta-suave); margin:8px 0 0}
-
 </style>
 </head>
 <body>
@@ -2899,8 +2925,14 @@ function fechaLarga(f) {
   return `${d.getDate()} de ${MESES[d.getMonth()]}`;
 }
 
+/* Cuenta días de CALENDARIO, no horas transcurridas. Antes se restaba
+   Date.now() contra el mediodía de la fecha: si alguien miraba la página a las
+   9 de la mañana, una mascota perdida ayer decía "hoy" y una de anteayer decía
+   "ayer". Aquí las fechas son información crítica, no adorno. */
 function haceCuanto(f) {
-  const dias = Math.floor((Date.now() - new Date(f + "T12:00:00").getTime()) / 86400000);
+  const d = new Date(f + "T12:00:00");
+  const hoyMediodia = new Date(); hoyMediodia.setHours(12, 0, 0, 0);
+  const dias = Math.round((hoyMediodia - d) / 86400000);   // redondeo: absorbe el cambio de hora
   if (dias <= 0) return "hoy";
   if (dias === 1) return "ayer";
   if (dias < 30) return `hace ${dias} días`;
@@ -3249,6 +3281,82 @@ function parecidoPaleta(A = [], B = []) {
    evidencia. Al final aplicamos penalizaciones por contradicciones directas.
 
    Es simétrico: puntuar(a,b) === puntuar(b,a). */
+/* Compara textos escritos a mano: ignora mayúsculas, espacios sobrantes y
+   tildes. Sin esto "Pastor Alemán" y "pastor aleman" contaban como razas
+   distintas, y la mitad de la gente escribe sin tildes en el celular. */
+const normalizarTexto = s => String(s || "").trim().toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/* El collar es el dato más identificador que un desconocido SÍ puede ver:
+   "azul con placa" es casi una identificación única. Se compara por palabras
+   sueltas porque nadie lo describe igual ("collar rojo" vs "rojo con placa").
+
+   Regla clave: si solo UNO de los dos menciona collar, esto no cuenta como
+   señal y no castiga. Los collares se caen, o quien recoge al animal se lo
+   quita antes de reportarlo — penalizarlo perdería reencuentros reales. */
+const PALABRAS_VACIAS_COLLAR = new Set(["collar", "con", "sin", "de", "del", "la",
+  "el", "los", "las", "un", "una", "unos", "unas", "que", "por", "para", "creo",
+  "tenia", "llevaba", "puesto", "puesta", "color", "algo", "como", "pero"]);
+
+/* Las "señas particulares" son texto libre y son lo más identificador que
+   escribe la gente: "mancha blanca en el pecho", "le falta la cola", "cojea".
+   Dos personas nunca las escriben igual, así que buscamos palabras compartidas.
+
+   Dos reglas hacen que esto sea seguro:
+
+   1) SOLO SUMA, NUNCA RESTA. Si no hay ninguna palabra en común, la señal ni
+      siquiera participa. Es indispensable: quien encuentra al animal muchas
+      veces describe otra cosa ("estaba asustado y con hambre") aunque sea la
+      misma mascota, y eso no puede contar como contradicción.
+
+   2) Se ignoran las palabras que no distinguen a un animal de otro: artículos,
+      verbos comunes, y a propósito TAMBIÉN los colores y los tamaños — esos ya
+      se puntúan en sus propias señales, y contarlos aquí otra vez sería
+      cobrarlos dos veces. */
+const PALABRAS_VACIAS_RASGOS = new Set([
+  // relleno del idioma
+  "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "en", "con",
+  "sin", "por", "para", "que", "se", "su", "sus", "es", "esta", "este", "ese", "esa",
+  "muy", "mas", "pero", "como", "cuando", "donde", "tiene", "tenia", "lleva",
+  "llevaba", "era", "fue", "esta", "estaba", "todo", "toda", "bien", "mal", "casi",
+  "algo", "poco", "solo", "sola", "tambien", "siempre", "ademas", "hacia", "desde",
+  // palabras que describen a cualquier mascota, no a esta
+  "perro", "perra", "gato", "gata", "animal", "mascota", "cachorro", "cachorra",
+  "macho", "hembra", "pequeno", "mediano", "grande", "chiquito", "chiquita",
+  "asustado", "asustada", "sano", "sana", "herido", "herida", "bonito", "bonita",
+  "lindo", "linda", "hermoso", "hermosa", "manso", "mansa", "nervioso", "nerviosa",
+  "calle", "casa", "sucio", "sucia", "flaco", "flaca", "gordo", "gorda", "viejo",
+  "vieja", "joven", "adulto", "pelo", "cuerpo", "parece", "creo",
+  // colores y tamaños: ya tienen su propia señal, contarlos aquí sería doble cobro
+  "negro", "negra", "blanco", "blanca", "gris", "cafe", "canela", "dorado", "dorada",
+  "crema", "naranja", "atigrado", "atigrada", "manchado", "manchada", "tricolor",
+  "marron", "amarillo", "amarilla", "beige", "claro", "clara", "oscuro", "oscura"
+]);
+
+function palabrasDeRasgos(texto) {
+  return new Set(normalizarTexto(texto).split(/[^a-z0-9]+/)
+    .map(p => p.length > 4 && p.endsWith("s") ? p.slice(0, -1) : p)  // manchas → mancha
+    .filter(p => p.length > 3 && !PALABRAS_VACIAS_RASGOS.has(p)));
+}
+
+function parecidoRasgos(a, b) {
+  const A = palabrasDeRasgos(a), B = palabrasDeRasgos(b);
+  if (!A.size || !B.size) return null;
+  let comunes = 0;
+  for (const p of A) if (B.has(p)) comunes++;
+  if (comunes === 0) return null;   // sin nada en común la señal no participa
+  return comunes >= 2 ? 1 : 0.7;    // una palabra es indicio; dos o más ya es mucha casualidad
+}
+
+function parecidoCollar(a, b) {
+  const palabras = s => new Set(normalizarTexto(s).split(/[^a-z0-9]+/)
+    .filter(p => p.length > 2 && !PALABRAS_VACIAS_COLLAR.has(p)));
+  const A = palabras(a), B = palabras(b);
+  if (!A.size || !B.size) return null;      // uno escribió solo relleno: no hay señal
+  for (const p of A) if (B.has(p)) return 1;
+  return 0.35;   // ambos vieron collar pero lo describen distinto: sigue siendo indicio
+}
+
 function puntuar(base, cand) {
   // Especie: filtro duro, salvo que alguno se haya reportado como "Otro"
   if (base.especie !== cand.especie &&
@@ -3264,14 +3372,27 @@ function puntuar(base, cand) {
 
   const razones = [];
   const senales = [];              // [peso, valor 0..1]
-  let castigo = 1;
+
+  /* Los castigos NO se multiplican entre sí: se aplica solo el más fuerte.
+     Cada contradicción ya baja el promedio por su cuenta al meter una señal
+     en 0, así que multiplicar además los castigos cobraba dos veces el mismo
+     error y los acumulaba. Un reporte llenado de afán con tres campos
+     equivocados, pero con el animal encontrado en el mismo punto y el mismo
+     día, caía a 20 puntos y desaparecía de la lista — justo el caso que el
+     producto tiene que tolerar. */
+  const castigos = [];
 
   // --- Geografía: el radio se abre con los días, porque los animales caminan
   const km = distanciaKm(base.lat, base.lng, cand.lat, cand.lng);
   const radio = Math.min(3 + Math.max(0, diasEntre) * 1.5, 25);
 
   if (km != null) {
-    if (km > radio * 2.5) return { total: 0 };
+    /* Tope duro alineado con el recuadro de 60 km que ya usa la consulta.
+       Pasado el radio la señal de cercanía vale 0 de todos modos, así que un
+       candidato lejano solo puntúa alto si TODO lo demás coincide — que es
+       exactamente cuando hay que mostrarlo (a un animal lo pueden mover en
+       carro decenas de kilómetros, y en un desastre eso es lo normal). */
+    if (km > Math.max(radio * 2.5, 60)) return { total: 0 };
     senales.push([40, Math.max(0, 1 - km / radio)]);
     razones.push(distanciaTexto(km) + " de distancia");
   } else if (base.municipio && cand.municipio && base.municipio === cand.municipio) {
@@ -3280,7 +3401,7 @@ function puntuar(base, cand) {
   } else {
     // sin ninguna prueba de cercanía la coincidencia es mucho más débil
     senales.push([40, base.departamento && base.departamento === cand.departamento ? 0.12 : 0]);
-    castigo *= 0.75;
+    castigos.push(0.75);
   }
 
   // --- Tamaño: mucha gente lo estima mal, así que un escalón casi no castiga
@@ -3289,7 +3410,7 @@ function puntuar(base, cand) {
     const d = Math.abs(ta - tb);
     senales.push([18, d === 0 ? 1 : d === 1 ? 0.45 : 0]);
     if (d === 0) razones.push("mismo tamaño");
-    if (d === 2) castigo *= 0.65;
+    if (d === 2) castigos.push(0.65);
   }
 
   // --- Color
@@ -3298,7 +3419,7 @@ function puntuar(base, cand) {
     senales.push([26, col]);
     if (col >= 0.85) razones.push("colores iguales");
     else if (col >= 0.45) razones.push("colores parecidos");
-    if (col < 0.15) castigo *= 0.6;
+    if (col < 0.15) castigos.push(0.6);
   }
 
   // --- Detalles
@@ -3306,16 +3427,31 @@ function puntuar(base, cand) {
   if (base.sexo && cand.sexo && base.sexo !== "No sé" && cand.sexo !== "No sé") {
     const igual = base.sexo === cand.sexo;
     senales.push([8, igual ? 1 : 0]);
-    if (!igual) castigo *= 0.7;
+    if (!igual) castigos.push(0.7);
   }
   if (base.raza && cand.raza) {
-    const igual = base.raza.trim().toLowerCase() === cand.raza.trim().toLowerCase();
+    const igual = normalizarTexto(base.raza) === normalizarTexto(cand.raza);
     senales.push([10, igual ? 1 : 0.3]);
     if (igual) razones.push("misma raza");
+  }
+  if (base.collar && cand.collar) {
+    const c = parecidoCollar(base.collar, cand.collar);
+    if (c != null) {
+      senales.push([14, c]);
+      if (c === 1) razones.push("collar parecido");
+    }
+  }
+  if (base.rasgos && cand.rasgos) {
+    const r = parecidoRasgos(base.rasgos, cand.rasgos);
+    if (r != null) {           // null = sin palabras en común: no participa, no castiga
+      senales.push([12, r]);
+      razones.push(r === 1 ? "las señas coinciden" : "una seña coincide");
+    }
   }
 
   const peso = senales.reduce((a, [w]) => a + w, 0);
   const suma = senales.reduce((a, [w, v]) => a + w * v, 0);
+  const castigo = castigos.length ? Math.min(...castigos) : 1;
   const total = Math.round(Math.max(0, Math.min(100, (suma / peso) * 100 * castigo)));
 
   return { total, razones, km, dias: diasEntre };
@@ -3327,7 +3463,12 @@ const banda = n => n >= 72 ? { k: "alta", t: "Muy parecido" }
 
 /* Trae candidatos del lado contrario. Filtra en el servidor por especie, tipo y
    recuadro geográfico para que funcione con el país entero cargado. */
-async function buscarCoincidencias(m, { minimo = 26, tope = 12 } = {}) {
+/* El tope es 24, no 12. En una ciudad con muchos reportes activos la pareja
+   verdadera puede quedar en el puesto 14 o 20 cuando quien la encontró llenó
+   el formulario de afán: el puntaje alcanzaba, pero el corte la dejaba fuera.
+   Medido en pruebas/adversario.test.js. Mostrar doce fichas más cuesta un
+   scroll; perder la buena significa una mascota que no vuelve. */
+async function buscarCoincidencias(m, { minimo = 26, tope = 24 } = {}) {
   const contrario = m.tipo === "perdida" ? "encontrada" : "perdida";
   const partes = [
     `tipo=eq.${contrario}`,
@@ -3455,8 +3596,12 @@ const rejilla = (filas, extras = {}) =>
 
 function filaCoincidencia(c) {
   const b = banda(c.total);
+  const foto = fotoPrincipal(c);
   return `<a class="coincidencia" href="/m/${c.codigo}" data-ruta>
-    <img src="${esc(fotoPrincipal(c))}" alt="" loading="lazy">
+    ${/* Sin la condición, una ficha sin foto generaba <img src=""> y el
+          navegador volvía a pedir la página entera y mostraba el ícono roto. */""}
+    ${foto ? `<img src="${esc(foto)}" alt="" loading="lazy">`
+           : `<span class="coincidencia__sinfoto" aria-hidden="true">🐾</span>`}
     <div class="coincidencia__texto">
       <b>${esc(nombreMostrado(c))}</b>
       <span>${esc([c.tamano, (c.colores || []).map(colorNombre).join(" y ")].filter(Boolean).join(" · "))}</span>
@@ -3470,6 +3615,48 @@ function avisoSinConfigurar(nodo) {
   nodo.innerHTML = `<div class="aviso aviso--rojo">
     <strong>Falta conectar la base de datos.</strong> Abre <code>config.js</code> y pega la URL y la
     clave anónima de tu proyecto de Supabase. El paso a paso está en el README.</div>`;
+}
+
+/* Recordatorio en el calendario del propio celular.
+
+   No tenemos servidor de avisos, y sin algo que salga de la página el dueño
+   solo se acuerda de actualizar su publicación si vuelve a entrar por su
+   cuenta. Un evento de calendario sí le suena en el teléfono el día indicado,
+   no cuesta nada, no necesita permisos ni cuentas, y funciona igual en Android
+   y en iPhone porque el formato .ics lo entienden los dos. */
+function descargarRecordatorio(m, enlaceGestion, dias = 3) {
+  const quien = m.nombre || (m.tipo === "perdida" ? "tu mascota" : "la mascota que encontraste");
+  const cuando = new Date(Date.now() + dias * 86400000);
+  cuando.setHours(19, 0, 0, 0);                       // 7 pm: hora en que la gente mira el celular
+  const fin = new Date(cuando.getTime() + 15 * 60000);
+  const marca = f => f.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const limpiar = t => String(t).replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+
+  const titulo = m.tipo === "perdida" ? `¿Ya apareció ${quien}?` : `¿${quien} volvió con su familia?`;
+  const detalle = `Si ya está en casa, márcalo aquí para que la publicación deje de aparecer ` +
+    `en las búsquedas y no le haga perder tiempo a quien quiere ayudar:\n${enlaceGestion}`;
+
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Patas de vuelta//ES", "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:patas-${m.codigo}-${Date.now()}@patasdevuelta`,
+    `DTSTAMP:${marca(new Date())}`,
+    `DTSTART:${marca(cuando)}`,
+    `DTEND:${marca(fin)}`,
+    `SUMMARY:${limpiar(titulo)}`,
+    `DESCRIPTION:${limpiar(detalle)}`,
+    `URL:${limpiar(enlaceGestion)}`,
+    "BEGIN:VALARM", "TRIGGER:-PT0M", "ACTION:DISPLAY",
+    `DESCRIPTION:${limpiar(titulo)}`, "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR"
+  ].join("\r\n");                                      // el formato .ics exige CRLF
+
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = `recordatorio-${m.codigo}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  brindis(`Listo. Tu celular te va a preguntar en ${dias} días.`, 5000);
 }
 
 /* ============================================================
@@ -3631,6 +3818,18 @@ function vistaReportar(tipo) {
         </div>
 
         <div class="campo">
+          <span class="campo__etiqueta">Pelo</span>
+          ${grupoOpciones("pelo", PELOS)}
+        </div>
+
+        <div class="campo">
+          <label class="campo__etiqueta" for="collar">¿Llevaba collar?</label>
+          <span class="campo__ayuda">Si tiene, describe el color y si lleva placa. Es de las cosas
+            que mejor identifican a un animal, y se ve de una.</span>
+          <input type="text" id="collar" maxlength="80" placeholder="Ej: collar azul con placa">
+        </div>
+
+        <div class="campo">
           <label class="campo__etiqueta" for="rasgos">Señas que se noten a simple vista</label>
           <span class="campo__ayuda">Una mancha, una oreja caída, que cojea, que le falta la cola.
             Esto es lo que hace que alguien lo reconozca en la calle.</span>
@@ -3638,28 +3837,28 @@ function vistaReportar(tipo) {
         </div>
       </fieldset>
 
+      ${/* Lo que sigue son datos que quien encuentra al animal muchas veces NO
+            puede saber (el sexo no se ve sin revisarlo, la raza se adivina mal).
+            Van aparte y con el rótulo diciendo la verdad: en blanco es MEJOR que
+            adivinado. Medido en pruebas/adversario.test.js — un campo vacío casi
+            no baja el puntaje, uno equivocado lo hunde hasta 53 puntos. */""}
       <details class="mas">
-        <summary>Más detalles (opcional, pero mejoran el cruce)</summary>
+        <summary>Si alcanzaste a fijarte (déjalo en blanco si no estás seguro)</summary>
         <div class="mas__cuerpo">
+          <p class="campo__ayuda">En serio: dejar algo vacío no estorba. Poner un dato equivocado
+            sí puede alejar a la mascota de su familia.</p>
           <div class="campo">
             <label class="campo__etiqueta" for="raza">Raza o mezcla</label>
             <input type="text" id="raza" maxlength="40" placeholder="Ej: criollo, labrador, siamés">
           </div>
           <div class="campo">
-            <span class="campo__etiqueta">Pelo</span>
-            ${grupoOpciones("pelo", PELOS)}
-          </div>
-          <div class="campo">
             <span class="campo__etiqueta">Sexo</span>
+            <span class="campo__ayuda">Si no lo revisaste, "No sé" es la respuesta correcta.</span>
             ${grupoOpciones("sexo", SEXOS)}
           </div>
           <div class="campo">
             <span class="campo__etiqueta">Edad aproximada</span>
             ${grupoOpciones("edad", EDADES)}
-          </div>
-          <div class="campo">
-            <label class="campo__etiqueta" for="collar">¿Llevaba collar?</label>
-            <input type="text" id="collar" maxlength="80" placeholder="Ej: collar azul con placa">
           </div>
           ${perdida ? `
           <div class="campo">
@@ -3740,14 +3939,34 @@ function vistaReportar(tipo) {
     if ($("#trampa").value) return;                       // relleno automático: lo ignoramos
     if (Date.now() - inicio < 2500) return brindis("Un momento, se está preparando el formulario.");
 
+    /* Cuando falta algo no basta con el mensajito de abajo: este formulario mide
+       varias pantallas y la persona no sabe a dónde volver. Llevamos la pantalla
+       al campo, lo resaltamos y ahí sí avisamos. */
+    const falta = (selector, mensaje) => {
+      const nodo = $(selector);
+      if (nodo) {
+        const caja = nodo.closest(".campo, .bloque, .fotos") || nodo;
+        caja.classList.add("campo--falta");
+        setTimeout(() => caja.classList.remove("campo--falta"), 2600);
+        nodo.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (nodo.focus && nodo.tagName !== "DIV") setTimeout(() => nodo.focus({ preventScroll: true }), 350);
+      }
+      brindis(mensaje, 4200);
+      return true;
+    };
+
     const especie = leerRadio("especie");
     const tel = $("#ctel").value.trim();
-    if (!estadoFotos.fotos.length) return brindis("Falta la foto. Sin foto casi nadie lo reconoce.");
-    if (!especie) return brindis("Dinos qué animal es.");
-    if (!tel) return brindis("Falta tu WhatsApp: es como te avisan.");
-    if (!telValido(tel)) { $("#ctel").focus(); return brindis("Revisa el número de teléfono."); }
+    if (!estadoFotos.fotos.length)
+      return falta("#f-zona", "Falta la foto. Sin foto casi nadie lo reconoce.");
+    if (!especie)
+      return falta("#form .opciones", "Dinos qué animal es.");
     if (ubi.lat == null && !ubi.municipio)
-      return brindis("Falta la ubicación: elige al menos el municipio.");
+      return falta("#u-dep", "Falta la ubicación: marca el punto en el mapa o elige al menos el municipio.");
+    if (!tel)
+      return falta("#ctel", "Falta tu WhatsApp: es por donde te avisan.");
+    if (!telValido(tel))
+      return falta("#ctel", "Revisa el número: un celular colombiano tiene 10 dígitos y empieza por 3.");
 
     btn.disabled = true; btn.textContent = "Publicando…";
     try {
@@ -3834,9 +4053,29 @@ async function vistaFicha(codigo) {
     ["Zona", [m.lugar, m.municipio, m.departamento].filter(Boolean).join(", ")]
   ].filter(d => d[1]);
 
+  /* ¿Quien está mirando es el dueño de esta publicación? Es el momento de más
+     alcance que tenemos: sin avisos que salgan de la página, la ficha propia es
+     lo que más visita quien publicó (para compartirla, para ver si hay
+     novedades, o al escanear el QR de su propio afiche). Aprovecharlo evita
+     fichas viejas que le hacen perder tiempo a todo el mundo. */
+  const mio = MIS.leer().find(x => x.codigo === m.codigo);
+
   main.innerHTML = `
     <a class="volver" href="/buscar" data-ruta>← Todos los reportes</a>
     ${bandaEstado}
+
+    ${mio && !resuelto ? `
+    <div class="aviso aviso--verde barra-dueno">
+      <p style="margin:0 0 10px"><strong>Esta publicación es tuya.</strong>
+        ¿Ya ${perdida ? "apareció" : "se reunió con su familia"}? Márcalo apenas pase:
+        una ficha desactualizada le hace perder tiempo a mucha gente que quiere ayudar.</p>
+      <div class="botonera">
+        <button class="boton boton--verde boton--compacto" id="ficha-resuelto">
+          Sí, ya está en casa</button>
+        <a class="boton boton--claro boton--compacto" href="/g/${esc(mio.token)}" data-ruta>
+          Administrar</a>
+      </div>
+    </div>` : ""}
 
     <div class="ficha__cabeza">
       <div style="flex:1">
@@ -3924,6 +4163,16 @@ async function vistaFicha(codigo) {
   });
 
   $("#btn-tengo")?.addEventListener("click", () => abrirFormularioPista(m));
+
+  $("#ficha-resuelto")?.addEventListener("click", async () => {
+    if (!confirm(`¿Confirmas que ${titulo} ya está en casa? La ficha dejará de aparecer en las búsquedas.`)) return;
+    try {
+      await rpc("actualizar_estado", { p_token: mio.token, p_estado: "resuelto" });
+      MIS.parchar(mio.token, { resuelto: true });
+      brindis("¡Qué buena noticia! Gracias por avisar.", 5000);
+      vistaFicha(m.codigo);
+    } catch { brindis("No se pudo actualizar. Intenta desde 'Administrar'."); }
+  });
 
   // pistas públicas
   rest(`pistas_publicas?mascota_id=eq.${m.id}&order=creado.desc&limit=60`).then(ps => {
@@ -4231,7 +4480,12 @@ async function vistaGestionar(token, params) {
     <div class="aviso aviso--verde">
       <p style="margin:0 0 10px"><strong>¿Ya apareció?</strong> Márcalo apenas pase: una ficha
         desactualizada le hace perder tiempo a mucha gente que quiere ayudar.</p>
-      <button class="boton boton--verde boton--compacto" id="btn-resuelto">Sí, ya está en casa</button>
+      <div class="botonera">
+        <button class="boton boton--verde boton--compacto" id="btn-resuelto">Sí, ya está en casa</button>
+        <button class="boton boton--claro boton--compacto" id="btn-recordar">Recordármelo en 3 días</button>
+      </div>
+      <p class="pista__nota">El recordatorio queda en el calendario de tu celular y te suena solo.
+        No enviamos mensajes ni necesitamos tus datos para eso.</p>
     </div>` : `
     <div class="banda banda--resuelto">Marcada como resuelta
       <small>La ficha ahora muestra el aviso de reencuentro a quien llegue por un afiche viejo.</small></div>
@@ -4244,13 +4498,15 @@ async function vistaGestionar(token, params) {
       <button class="boton boton--claro boton--compacto" id="btn-copiar">Copiar enlace</button>
     </div>
 
+    <div id="tras-escribir"></div>
+
     <h2 class="seccion__titulo">Novedades (${pistas.length})</h2>
     ${pistas.length ? pistas.map(p => `
       <div class="pista ${p.clase === "tengo" ? "pista--tengo" : ""}">
         <p class="pista__meta">${new Date(p.creado).toLocaleString("es-CO")}${p.lugar ? " · " + esc(p.lugar) : ""}${p.clase === "tengo" ? " · DICE TENERLO" : ""}</p>
         <p>${esc(p.mensaje)}</p>
         ${p.contacto ? `<div class="botonera" style="margin-top:10px">
-          <a class="boton boton--verde boton--compacto" target="_blank" rel="noopener"
+          <a class="boton boton--verde boton--compacto" target="_blank" rel="noopener" data-escribio
              href="${esc(enlaceWhatsapp(p.contacto, `Hola, te escribo por ${m.nombre || "mi mascota"} (código ${m.codigo}). Gracias por avisar.`))}">
             Escribirle por WhatsApp</a>
           <a class="boton boton--claro boton--compacto" href="tel:${esc(telLimpio(p.contacto))}">Llamar</a>
@@ -4274,6 +4530,32 @@ async function vistaGestionar(token, params) {
     catch { brindis(enlace); }
   });
   $("#btn-afiche2").addEventListener("click", () => navegar(`/afiche/${m.codigo}`));
+  $("#btn-recordar")?.addEventListener("click", () => descargarRecordatorio(m, gestion));
+
+  /* Escribirle a alguien que dice tener al animal es el momento en que el
+     reencuentro está más cerca. Al volver de WhatsApp la pregunta ya está
+     esperando, en vez de depender de que la persona se acuerde días después. */
+  if (!resuelto) $$("[data-escribio]").forEach(a => a.addEventListener("click", () => {
+    const caja = $("#tras-escribir");
+    if (!caja || caja.dataset.puesto) return;
+    caja.dataset.puesto = "1";
+    caja.innerHTML = `<div class="aviso aviso--verde">
+      <p style="margin:0 0 10px"><strong>¿Era ${esc(m.nombre || "tu mascota")}?</strong>
+        Si ya la recuperaste, márcalo aquí mismo y la ficha deja de aparecer en las búsquedas.</p>
+      <button class="boton boton--verde boton--compacto" id="btn-resuelto2">Sí, ya está en casa</button>
+    </div>`;
+    $("#btn-resuelto2").addEventListener("click", () => $("#btn-resuelto")?.click()
+      || marcarResuelto());
+  }));
+
+  async function marcarResuelto() {
+    try {
+      await rpc("actualizar_estado", { p_token: token, p_estado: "resuelto" });
+      MIS.parchar(token, { resuelto: true });
+      brindis("¡Qué buena noticia! Gracias por avisar.", 5000);
+      vistaGestionar(token, new URLSearchParams());
+    } catch { brindis("No se pudo actualizar. Intenta otra vez."); }
+  }
 
   $("#btn-resuelto")?.addEventListener("click", async () => {
     try {
@@ -4527,71 +4809,99 @@ function envolver(ctx, texto, maxAncho) {
   return lineas;
 }
 
+/* Rectángulo de esquinas redondeadas. roundRect() nativo no existe en
+   navegadores viejos, y en zona rural hay muchos teléfonos viejos. */
+function cajaRedonda(x, px, py, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  x.beginPath();
+  x.moveTo(px + rr, py);
+  x.arcTo(px + w, py, px + w, py + h, rr);
+  x.arcTo(px + w, py + h, px, py + h, rr);
+  x.arcTo(px, py + h, px, py, rr);
+  x.arcTo(px, py, px + w, py, rr);
+  x.closePath();
+}
+
 async function dibujarAfiche(m, formato) {
   try { await document.fonts.ready; } catch { }
 
   const historia = formato === "historia";
   const W = 1080, H = historia ? 1920 : 1080;
 
+  /* La foto pasó a ocupar cerca de la mitad del afiche y va de borde a borde.
+     Antes era un tercio, con márgenes: en un afiche pegado en un poste la foto
+     ES el mensaje, y el resto solo la acompaña. El bloque del QR quedó sobre un
+     panel oscuro para que se lea como "aquí se hace algo", no como pie de
+     página perdido. */
   const L = historia
-    ? { franja: 200, rotulo: 112, margen: 56, fotoY: 240, fotoAlto: 840,
-        nombre: 96, rasgo: 44, zona: 46, senas: 40, senasSalto: 52,
-        qrY: 1552, qrLado: 250, enlace: 44, pie: 30, notaMax: 3 }
-    : { franja: 132, rotulo: 82, margen: 52, fotoY: 158, fotoAlto: 360,
-        nombre: 72, rasgo: 34, zona: 36, senas: 31, senasSalto: 40,
-        qrY: 840, qrLado: 168, enlace: 34, pie: 24, notaMax: 2 };
+    ? { franja: 186, rotulo: 108, margen: 56,
+        fotoY: 186, fotoAlto: 940,
+        nombre: 104, clave: 46, zona: 50, senas: 40, senasSalto: 52, senasMax: 2,
+        panelY: 1560, panelAlto: 286, qrLado: 190, enlace: 44, pie: 30 }
+    : { franja: 118, rotulo: 76, margen: 48,
+        fotoY: 118, fotoAlto: 486,
+        nombre: 74, clave: 33, zona: 36, senas: 29, senasSalto: 38, senasMax: 1,
+        panelY: 842, panelAlto: 186, qrLado: 122, enlace: 32, pie: 22 };
 
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
   const x = c.getContext("2d");
 
-  const PAPEL = "#F4F2E9", TINTA = "#12211C", SUAVE = "#4A5A53";
+  const PAPEL = "#F4F2E9", TINTA = "#12211C", SUAVE = "#4A5A53", MARCADOR = "#FFD447";
   const ACENTO = m.estado === "resuelto" ? "#15704B"
     : m.tipo === "perdida" ? "#D6402A" : "#15704B";
   const D = '"Bricolage Grotesque", sans-serif', C = '"Instrument Sans", sans-serif';
 
   x.fillStyle = PAPEL; x.fillRect(0, 0, W, H);
 
+  // ---------- Franja del rótulo ----------
   x.fillStyle = ACENTO; x.fillRect(0, 0, W, L.franja);
   x.fillStyle = "#fff"; x.textAlign = "center";
   const rotulo = m.estado === "resuelto" ? "YA ESTÁ EN CASA"
     : m.tipo === "perdida" ? "SE BUSCA" : "SE ENCONTRÓ";
-  const tr = ajustarTexto(x, rotulo, W - 130, L.rotulo, D, 800);
+  const tr = ajustarTexto(x, rotulo, W - 120, L.rotulo, D, 800);
   x.font = `800 ${tr}px ${D}`;
   x.fillText(rotulo, W / 2, L.franja / 2 + tr * 0.35);
 
-  const fw = W - L.margen * 2;
-  x.fillStyle = "#E7E4D7";
-  x.fillRect(L.margen, L.fotoY, fw, L.fotoAlto);
+  // ---------- Foto de borde a borde ----------
   const img = fotoPrincipal(m) ? await cargarImagen(fotoPrincipal(m)) : null;
+  x.fillStyle = "#E7E4D7";
+  x.fillRect(0, L.fotoY, W, L.fotoAlto);
   if (img) {
-    const e = Math.max(fw / img.width, L.fotoAlto / img.height);
+    const e = Math.max(W / img.width, L.fotoAlto / img.height);
     const aw = img.width * e, ah = img.height * e;
-    x.save(); x.beginPath(); x.rect(L.margen, L.fotoY, fw, L.fotoAlto); x.clip();
+    x.save(); x.beginPath(); x.rect(0, L.fotoY, W, L.fotoAlto); x.clip();
     // anclada arriba: si hay que recortar, se recorta el cuerpo y no la cara
-    x.drawImage(img, L.margen + (fw - aw) / 2, L.fotoY, aw, ah);
+    x.drawImage(img, (W - aw) / 2, L.fotoY, aw, ah);
     x.restore();
+  } else {
+    // Sin foto no dejamos un bloque gris enorme y mudo
+    x.fillStyle = "#CFCBBC"; x.textAlign = "center";
+    x.font = `800 ${historia ? 150 : 96}px ${D}`;
+    x.fillText("🐾", W / 2, L.fotoY + L.fotoAlto / 2 + (historia ? 20 : 12));
+    x.fillStyle = SUAVE; x.font = `500 ${historia ? 40 : 30}px ${C}`;
+    x.fillText("Sin foto — mira las señas", W / 2, L.fotoY + L.fotoAlto / 2 + (historia ? 116 : 78));
   }
-  x.strokeStyle = TINTA; x.lineWidth = 4;
-  x.strokeRect(L.margen, L.fotoY, fw, L.fotoAlto);
+  // línea fina que separa la foto del papel
+  x.fillStyle = "rgba(18,33,28,.18)"; x.fillRect(0, L.fotoY + L.fotoAlto - 2, W, 2);
 
-  let y = L.fotoY + L.fotoAlto + (historia ? 92 : 66);
-
+  // ---------- Nombre ----------
+  let y = L.fotoY + L.fotoAlto + (historia ? 104 : 66);
   x.textAlign = "center"; x.fillStyle = TINTA;
   const titulo = (m.nombre || `${m.especie} sin identificar`).toUpperCase();
   const tt = ajustarTexto(x, titulo, W - L.margen * 2, L.nombre, D, 800);
   x.font = `800 ${tt}px ${D}`;
   x.fillText(titulo, W / 2, y);
-  y += historia ? 62 : 46;
+  y += historia ? 64 : 44;
 
+  // ---------- Datos clave ----------
   const clave = [m.especie, m.tamano, (m.colores || []).map(colorNombre).join(" y ")]
     .filter(Boolean).join(" · ");
-  x.font = `500 ${L.rasgo}px ${C}`; x.fillStyle = SUAVE;
+  x.font = `500 ${L.clave}px ${C}`; x.fillStyle = SUAVE;
   x.fillText(clave, W / 2, y);
-  y += historia ? 66 : 52;
+  y += historia ? 76 : 54;
 
-  // Zona resaltada. Si el texto es largo se reparte en dos líneas en vez de
-  // encogerse hasta volverse ilegible desde lejos.
+  // ---------- Zona, resaltada ----------
   const zona = `${m.tipo === "perdida" ? "Se perdió" : "Apareció"} en ${m.lugar || m.municipio || "zona sin especificar"}`;
   const anchoUtil = W - L.margen * 2 - 36;
   let tz = L.zona;
@@ -4603,59 +4913,90 @@ async function dibujarAfiche(m, formato) {
   }
   lineasZona.forEach(linea => {
     x.font = `600 ${tz}px ${C}`;
-    const anchoZ = Math.min(x.measureText(linea).width + 32, W - L.margen);
-    x.fillStyle = "#FFD447";
-    x.fillRect(W / 2 - anchoZ / 2, y - tz * 0.78, anchoZ, tz * 1.14);
+    const anchoZ = Math.min(x.measureText(linea).width + 34, W - L.margen);
+    x.fillStyle = MARCADOR;
+    cajaRedonda(x, W / 2 - anchoZ / 2, y - tz * 0.82, anchoZ, tz * 1.2, tz * 0.28); x.fill();
     x.fillStyle = TINTA;
     x.fillText(linea, W / 2, y);
-    y += tz * 1.28;
+    y += tz * 1.34;
   });
-  y += historia ? 16 : 10;
+  y += historia ? 14 : 8;
 
+  // ---------- Fecha ----------
   x.font = `400 ${L.senas}px ${C}`; x.fillStyle = SUAVE;
   x.fillText(`${fechaLarga(m.fecha)} · ${haceCuanto(m.fecha)}`, W / 2, y);
-  y += historia ? 56 : 42;
+  y += historia ? 54 : 38;
 
-  if (m.rasgos) {
-    x.font = `400 ${L.senas}px ${C}`;
-    const lineas = envolver(x, m.rasgos, W - L.margen * 2).slice(0, historia ? 3 : 2);
-    const caben = Math.max(0, Math.floor((L.qrY - 16 - y) / L.senasSalto));
+  /* ---------- Señas y collar ----------
+     El collar va primero: es lo más identificador que un desconocido alcanza a
+     ver de lejos, sin acercarse al animal. */
+  const detalles = [];
+  if (m.collar) detalles.push(`Collar: ${m.collar}`);
+  if (m.rasgos) detalles.push(m.rasgos);
+  if (detalles.length) {
+    x.font = `400 ${L.senas}px ${C}`; x.fillStyle = TINTA;
+    const lineas = [];
+    for (const d of detalles) lineas.push(...envolver(x, d, W - L.margen * 2));
+    const caben = Math.max(0, Math.min(L.senasMax,
+      Math.floor((L.panelY - 20 - y) / L.senasSalto)));
     lineas.slice(0, caben).forEach(l => { x.fillText(l, W / 2, y); y += L.senasSalto; });
   }
 
+  /* ---------- Panel del QR ----------
+     Sobre fondo oscuro, con el QR en su tarjeta blanca. Antes el QR flotaba
+     sobre el papel y se leía como pie de página; así se lee como la acción
+     principal del afiche. */
   const url = `${baseURL()}/m/${m.codigo}`;
   const dominio = baseURL().replace(/^https?:\/\//, "");
-  const qrX = L.margen;
-  let textoX = L.margen;
+  const pm = L.margen, pw = W - pm * 2;
+
+  x.fillStyle = TINTA;
+  cajaRedonda(x, pm, L.panelY, pw, L.panelAlto, historia ? 34 : 26); x.fill();
+
+  const relleno = historia ? 30 : 22;
+  let textoX = pm + relleno;
 
   if (window.qrcode) {
     const q = window.qrcode(0, "M"); q.addData(url); q.make();
     const n = q.getModuleCount(), p = L.qrLado / n;
+    /* El QR necesita un borde blanco de al menos 4 módulos alrededor ("zona
+       tranquila") o hay lectores que no lo agarran. Como el panel es oscuro,
+       ese borde tiene que venir de la tarjeta blanca: lo calculamos a partir
+       del tamaño real del módulo, no a ojo. */
+    const acolchado = Math.ceil(p * 4) + 2;
+    const qrCaja = L.qrLado + acolchado * 2;
+    const qrX = pm + relleno, qrY = L.panelY + (L.panelAlto - qrCaja) / 2;
+
     x.fillStyle = "#fff";
-    x.fillRect(qrX - 10, L.qrY - 10, L.qrLado + 20, L.qrLado + 20);
+    cajaRedonda(x, qrX, qrY, qrCaja, qrCaja, 12); x.fill();
+    const ix = qrX + acolchado, iy = qrY + acolchado;
     x.fillStyle = TINTA;
     for (let r = 0; r < n; r++) for (let col = 0; col < n; col++)
-      if (q.isDark(r, col)) x.fillRect(qrX + col * p, L.qrY + r * p, p + 0.6, p + 0.6);
-    textoX = qrX + L.qrLado + (historia ? 44 : 34);
+      if (q.isDark(r, col)) x.fillRect(ix + col * p, iy + r * p, p + 0.6, p + 0.6);
+    textoX = qrX + qrCaja + (historia ? 40 : 28);
   }
 
   x.textAlign = "left";
-  const anchoTexto = W - textoX - L.margen;
-  x.fillStyle = SUAVE; x.font = `500 ${L.senas}px ${C}`;
-  x.fillText("Escanea o entra a", textoX, L.qrY + (historia ? 52 : 40));
+  const anchoTexto = W - textoX - pm - relleno;
+  let ty = L.panelY + (historia ? 92 : 62);
 
-  x.fillStyle = TINTA;
+  x.fillStyle = MARCADOR; x.font = `700 ${L.senas}px ${C}`;
+  x.fillText("ESCANEA EL CÓDIGO", textoX, ty);
+  ty += historia ? 56 : 40;
+
+  x.fillStyle = "#fff";
   const te = ajustarTexto(x, `${dominio}/m/${m.codigo}`, anchoTexto, L.enlace, D, 700);
   x.font = `700 ${te}px ${D}`;
-  x.fillText(`${dominio}/m/${m.codigo}`, textoX, L.qrY + (historia ? 52 : 40) + te + 14);
+  x.fillText(`${dominio}/m/${m.codigo}`, textoX, ty);
+  ty += historia ? 50 : 34;
 
-  x.fillStyle = SUAVE; x.font = `400 ${L.pie}px ${C}`;
-  const nota = envolver(x, "Ahí está la información al día y puedes reportar si lo has visto.", anchoTexto);
-  nota.slice(0, L.notaMax).forEach((l, i) =>
-    x.fillText(l, textoX, L.qrY + (historia ? 52 : 40) + te + (historia ? 60 : 48) + i * (L.pie + 8)));
+  x.fillStyle = "rgba(255,255,255,.72)"; x.font = `400 ${L.pie}px ${C}`;
+  envolver(x, "Información al día y contacto directo.", anchoTexto)
+    .slice(0, 2).forEach((l, i) => x.fillText(l, textoX, ty + i * (L.pie + 8)));
 
+  // ---------- Pie ----------
   x.textAlign = "center"; x.fillStyle = SUAVE; x.font = `400 ${L.pie}px ${C}`;
-  x.fillText("Nadie que de verdad lo tenga te va a pedir dinero por adelantado.", W / 2, H - 34);
+  x.fillText("Nadie que de verdad lo tenga te va a pedir dinero por adelantado.", W / 2, H - 30);
 
   return c;
 }
@@ -4755,7 +5096,9 @@ function enrutar() {
   if (p.startsWith("/editar/")) return vistaEditar(decodeURIComponent(p.slice(8)));
   if (p.startsWith("/afiche/")) return vistaAfiche(decodeURIComponent(p.slice(8)));
 
-  main.innerHTML = `<div class="vacio"><b>Esta página no existe</b>
+  main.innerHTML = `<div class="vacio">
+    <h1 style="font:inherit;margin:0 0 5px"><b>Esta página no existe</b></h1>
+    Puede que el enlace esté incompleto o que la publicación se haya retirado.
     <p style="margin-top:12px"><a href="/" data-ruta class="enlace-fuerte">Volver al inicio →</a></p></div>`;
 }
 
