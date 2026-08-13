@@ -93,6 +93,14 @@ function brindis(msg, ms = 3600) {
   t._t = setTimeout(() => t.classList.remove("brindis--visible"), ms);
 }
 
+/* Espera a que la persona pare de mover algo antes de hacer el trabajo caro
+   (aquí, redibujar el afiche completo). Sin esto, arrastrar la foto en un
+   celular de gama baja repintaría un lienzo de 1080px en cada milisegundo. */
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
 function baseURL() {
   if (CFG.DOMINIO) return CFG.DOMINIO.replace(/\/$/, "");
   if (location.protocol.startsWith("http")) return location.origin;
@@ -170,6 +178,24 @@ const AVISOS = {
 
   yaDecidio: () => "Notification" in window && Notification.permission !== "default",
   concedido: () => "Notification" in window && Notification.permission === "granted",
+
+  /* Por qué no se pueden activar aquí — para mostrarlo, no para adivinar en
+     silencio. El caso más común con esta audiencia es iPhone sin instalar:
+     Safari solo expone PushManager cuando la página está agregada a la
+     pantalla de inicio, no en una pestaña normal. */
+  motivoNoSoportado() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator))
+      return "Este navegador no admite avisos. Prueba abriendo el enlace en Chrome o en el navegador que trae el teléfono.";
+    if (location.protocol !== "https:" && location.hostname !== "localhost")
+      return "Los avisos necesitan que la página esté publicada con conexión segura.";
+    if (!("PushManager" in window)) {
+      const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      return esIOS
+        ? "En iPhone, los avisos solo funcionan si agregas esta página a la pantalla de inicio: toca Compartir → Añadir a pantalla de inicio, y ábrela desde ahí."
+        : "Este navegador no admite avisos. Si abriste el enlace desde WhatsApp o Instagram, prueba abriéndolo en Chrome.";
+    }
+    return "Este navegador no admite avisos.";
+  },
 
   /* La clave pública del servidor de avisos. La pedimos a la función Edge en
      vez de escribirla en config.js para que no haya un dato más que copiar a
@@ -1873,45 +1899,55 @@ async function vistaGestionar(token, params) {
   $("#recordar-nuevo")?.addEventListener("click", () => descargarRecordatorio(m, gestion));
 
   /* ---------- Avisos push ----------
-     Solo se ofrece si el navegador puede, y solo mientras el caso siga abierto.
-     Si la persona ya dijo que no, no insistimos con un botón que no va a
-     funcionar: el navegador no vuelve a preguntar. */
-  if (!resuelto && AVISOS.soportado()) {
-    const caja = $("#avisos-push");
-    const pintarAvisos = (estado) => {
-      if (estado === "activo") {
-        caja.innerHTML = `<div class="aviso aviso--verde">
-          <strong>Avisos activados en este teléfono.</strong> Si alguien publica una mascota que
-          se parece mucho a ${esc(m.nombre || "la tuya")}, te suena aquí aunque tengas la página cerrada.</div>`;
-      } else if (estado === "negado") {
-        caja.innerHTML = `<div class="aviso">
-          <strong>Los avisos están bloqueados en este navegador.</strong> Se pueden volver a permitir
-          desde los ajustes del sitio, en el candado de la barra de direcciones.</div>`;
-      } else {
-        caja.innerHTML = `<div class="aviso">
-          <p style="margin:0 0 10px"><strong>¿Te avisamos apenas aparezca algo?</strong>
-            Te suena en este teléfono si alguien publica una mascota parecida, sin que tengas
-            que entrar a revisar.</p>
-          <button class="boton boton--claro boton--compacto" id="btn-activar-avisos">Activar avisos</button></div>`;
-        $("#btn-activar-avisos").addEventListener("click", async () => {
-          const b = $("#btn-activar-avisos");
-          b.disabled = true; b.textContent = "Activando…";
-          try {
-            await AVISOS.activar(token);
-            pintarAvisos("activo");
-            brindis("Listo. Te avisamos apenas haya algo.", 4500);
-          } catch (e) {
-            pintarAvisos(Notification.permission === "denied" ? "negado" : "sin");
-            brindis(e.message || "No se pudieron activar los avisos.", 4500);
-          }
-        });
-      }
-    };
+     Solo mientras el caso siga abierto. Si la persona ya dijo que no, no
+     insistimos con un botón que no va a funcionar: el navegador no vuelve a
+     preguntar.
 
-    if (Notification.permission === "denied") pintarAvisos("negado");
-    else rpc("tiene_suscripcion", { p_token: token })
-      .then(tiene => pintarAvisos(tiene && AVISOS.concedido() ? "activo" : "sin"))
-      .catch(() => pintarAvisos("sin"));
+     ANTES, cuando AVISOS.soportado() daba falso (el caso más común: iPhone
+     sin agregar la página a la pantalla de inicio), el bloque completo se
+     quedaba vacío y sin ninguna explicación — parecía que la opción
+     simplemente no existía. Ahora siempre se muestra algo. */
+  if (!resuelto) {
+    const caja = $("#avisos-push");
+
+    if (!AVISOS.soportado()) {
+      caja.innerHTML = `<div class="aviso">${esc(AVISOS.motivoNoSoportado())}</div>`;
+    } else {
+      const pintarAvisos = (estado) => {
+        if (estado === "activo") {
+          caja.innerHTML = `<div class="aviso aviso--verde">
+            <strong>Avisos activados en este teléfono.</strong> Si alguien publica una mascota que
+            se parece mucho a ${esc(m.nombre || "la tuya")}, te suena aquí aunque tengas la página cerrada.</div>`;
+        } else if (estado === "negado") {
+          caja.innerHTML = `<div class="aviso">
+            <strong>Los avisos están bloqueados en este navegador.</strong> Se pueden volver a permitir
+            desde los ajustes del sitio, en el candado de la barra de direcciones.</div>`;
+        } else {
+          caja.innerHTML = `<div class="aviso">
+            <p style="margin:0 0 10px"><strong>¿Te avisamos apenas aparezca algo?</strong>
+              Te suena en este teléfono si alguien publica una mascota parecida, sin que tengas
+              que entrar a revisar.</p>
+            <button class="boton boton--claro boton--compacto" id="btn-activar-avisos">Activar avisos</button></div>`;
+          $("#btn-activar-avisos").addEventListener("click", async () => {
+            const b = $("#btn-activar-avisos");
+            b.disabled = true; b.textContent = "Activando…";
+            try {
+              await AVISOS.activar(token);
+              pintarAvisos("activo");
+              brindis("Listo. Te avisamos apenas haya algo.", 4500);
+            } catch (e) {
+              pintarAvisos(Notification.permission === "denied" ? "negado" : "sin");
+              brindis(e.message || "No se pudieron activar los avisos.", 4500);
+            }
+          });
+        }
+      };
+
+      if (Notification.permission === "denied") pintarAvisos("negado");
+      else rpc("tiene_suscripcion", { p_token: token })
+        .then(tiene => pintarAvisos(tiene && AVISOS.concedido() ? "activo" : "sin"))
+        .catch(() => pintarAvisos("sin"));
+    }
   }
 
   /* Escribirle a alguien que dice tener al animal es el momento en que el
@@ -2259,26 +2295,135 @@ function cajaRedonda(x, px, py, w, h, r) {
   x.closePath();
 }
 
-async function dibujarAfiche(m, formato) {
+/* La foto ocupa cerca de la mitad del afiche y va de borde a borde: en un
+   afiche pegado en un poste la foto ES el mensaje. El bloque del QR va sobre
+   un panel oscuro para que se lea como "aquí se hace algo", no como pie de
+   página perdido.
+
+   Un solo lugar para las medidas: tanto dibujarAfiche() como el control de
+   "ajustar foto" (más abajo) necesitan saber cuánto mide la franja de la
+   foto, y si vivieran en dos sitios se podrían desincronizar como ya pasó
+   una vez con la copia del algoritmo de cruce. */
+/* ---------- AJUSTE DE FOTO PARA EL AFICHE ----------
+   El afiche recorta la foto para llenar la franja de arriba ("cover"). Si el
+   animal no quedó centrado en la foto original, la parte que importa puede
+   caer fuera del recuadro o quedar tapada por el resto del diseño. Este
+   control deja arrastrar y hacer zoom sobre la foto para elegir qué parte se
+   ve, antes de generar el afiche. No se sube ni se recorta nada de verdad:
+   solo se guardan tres números (zoom, panX, panY) que dibujarAfiche() usa
+   al pintar el lienzo.
+
+   Por qué en fracciones y no en píxeles: así el mismo ajuste sirve igual sin
+   importar el ancho de la franja, y no hay que recalcular nada al cambiar
+   entre "Publicación" e "Historia". */
+function AjustadorFoto(estado, opciones = {}) {
+  const html = `
+    <div class="ajuste-foto">
+      <div class="ajuste-foto__marco" id="af-marco" style="aspect-ratio:${esc(opciones.aspecto || "1")}">
+        <img id="af-img" src="${esc(estado.url)}" alt="" draggable="false">
+      </div>
+      <div class="ajuste-foto__controles">
+        <span class="ajuste-foto__icono" aria-hidden="true">🔍</span>
+        <input type="range" id="af-zoom" min="1" max="2.5" step="0.02" value="${estado.ajuste.zoom}"
+          aria-label="Acercar la foto">
+        <button type="button" class="boton boton--claro boton--compacto" id="af-reset">Centrar de nuevo</button>
+      </div>
+      <p class="campo__ayuda">Arrastra la foto para moverla dentro del marco.</p>
+    </div>`;
+
+  const conectar = () => {
+    const marco = $("#af-marco"), img = $("#af-img"), zoom = $("#af-zoom");
+    let arrastrando = false, ultimo = null;
+
+    const avisar = final => { if (opciones.alCambiar) opciones.alCambiar(final); };
+
+    const pintar = () => {
+      const mw = marco.clientWidth, mh = marco.clientHeight;
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      if (!iw || !ih || !mw || !mh) return;
+      const cubre = Math.max(mw / iw, mh / ih) * estado.ajuste.zoom;
+      const aw = iw * cubre, ah = ih * cubre;
+      const x = -(aw - mw) * estado.ajuste.panX;
+      const y = -(ah - mh) * estado.ajuste.panY;
+      img.style.width = aw + "px";
+      img.style.height = ah + "px";
+      img.style.transform = `translate(${x}px, ${y}px)`;
+    };
+    if (img.complete) pintar(); else img.addEventListener("load", pintar, { once: true });
+    new ResizeObserver(pintar).observe(marco);   // cambia el ancho al rotar el celular
+
+    zoom.addEventListener("input", () => {
+      estado.ajuste.zoom = +zoom.value;
+      pintar(); avisar(false);
+    });
+    zoom.addEventListener("change", () => avisar(true));   // al soltar el control
+
+    $("#af-reset").addEventListener("click", () => {
+      estado.ajuste = { zoom: 1, panX: 0.5, panY: 0 };
+      zoom.value = 1;
+      pintar(); avisar(true);
+    });
+
+    const mover = (dx, dy) => {
+      const mw = marco.clientWidth, mh = marco.clientHeight;
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      const cubre = Math.max(mw / iw, mh / ih) * estado.ajuste.zoom;
+      // Math.max(1, …): evita dividir entre 0 en el caso límite de una foto
+      // que cubre justo al pelo, sin nada de sobrante para desplazar.
+      const excesoX = Math.max(1, iw * cubre - mw), excesoY = Math.max(1, ih * cubre - mh);
+      estado.ajuste.panX = Math.min(1, Math.max(0, estado.ajuste.panX - dx / excesoX));
+      estado.ajuste.panY = Math.min(1, Math.max(0, estado.ajuste.panY - dy / excesoY));
+      pintar();
+    };
+
+    marco.addEventListener("pointerdown", e => {
+      arrastrando = true; ultimo = { x: e.clientX, y: e.clientY };
+      // Puede fallar en algún borde raro (p.ej. si el navegador ya perdió el
+      // puntero); no debe tumbar el resto del arrastre si eso pasa.
+      try { marco.setPointerCapture(e.pointerId); } catch { }
+      marco.classList.add("ajuste-foto__marco--arrastrando");
+    });
+    marco.addEventListener("pointermove", e => {
+      if (!arrastrando) return;
+      mover(e.clientX - ultimo.x, e.clientY - ultimo.y);
+      ultimo = { x: e.clientX, y: e.clientY };
+      avisar(false);
+    });
+    const soltar = () => {
+      if (!arrastrando) return;
+      arrastrando = false;
+      marco.classList.remove("ajuste-foto__marco--arrastrando");
+      avisar(true);
+    };
+    marco.addEventListener("pointerup", soltar);
+    marco.addEventListener("pointercancel", soltar);
+  };
+
+  return { html, conectar };
+}
+
+const LAYOUT_AFICHE = {
+  cuadrado: { W: 1080, H: 1080, franja: 118, rotulo: 76, margen: 48,
+    fotoY: 118, fotoAlto: 486,
+    nombre: 74, clave: 33, zona: 36, senas: 29, senasSalto: 38, senasMax: 1,
+    panelY: 842, panelAlto: 186, qrLado: 122, enlace: 32, pie: 22 },
+  historia: { W: 1080, H: 1920, franja: 186, rotulo: 108, margen: 56,
+    fotoY: 186, fotoAlto: 940,
+    nombre: 104, clave: 46, zona: 50, senas: 40, senasSalto: 52, senasMax: 2,
+    panelY: 1560, panelAlto: 286, qrLado: 190, enlace: 44, pie: 30 }
+};
+
+/* ajusteFoto = { zoom, panX, panY }, todo en fracciones (0..1), no en píxeles:
+   así sirve igual sin importar el ancho de la franja, y no hay que recalcular
+   nada al cambiar entre "Publicación" e "Historia". Sin ajuste (o con el
+   default zoom:1, panX:0.5, panY:0) el resultado es idéntico al de antes:
+   centrada en horizontal, pegada arriba en vertical. */
+async function dibujarAfiche(m, formato, ajusteFoto) {
   try { await document.fonts.ready; } catch { }
 
   const historia = formato === "historia";
-  const W = 1080, H = historia ? 1920 : 1080;
-
-  /* La foto pasó a ocupar cerca de la mitad del afiche y va de borde a borde.
-     Antes era un tercio, con márgenes: en un afiche pegado en un poste la foto
-     ES el mensaje, y el resto solo la acompaña. El bloque del QR quedó sobre un
-     panel oscuro para que se lea como "aquí se hace algo", no como pie de
-     página perdido. */
-  const L = historia
-    ? { franja: 186, rotulo: 108, margen: 56,
-        fotoY: 186, fotoAlto: 940,
-        nombre: 104, clave: 46, zona: 50, senas: 40, senasSalto: 52, senasMax: 2,
-        panelY: 1560, panelAlto: 286, qrLado: 190, enlace: 44, pie: 30 }
-    : { franja: 118, rotulo: 76, margen: 48,
-        fotoY: 118, fotoAlto: 486,
-        nombre: 74, clave: 33, zona: 36, senas: 29, senasSalto: 38, senasMax: 1,
-        panelY: 842, panelAlto: 186, qrLado: 122, enlace: 32, pie: 22 };
+  const L = LAYOUT_AFICHE[historia ? "historia" : "cuadrado"];
+  const W = L.W, H = L.H;
 
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
@@ -2305,11 +2450,15 @@ async function dibujarAfiche(m, formato) {
   x.fillStyle = "#E7E4D7";
   x.fillRect(0, L.fotoY, W, L.fotoAlto);
   if (img) {
-    const e = Math.max(W / img.width, L.fotoAlto / img.height);
-    const aw = img.width * e, ah = img.height * e;
+    const a = ajusteFoto || { zoom: 1, panX: 0.5, panY: 0 };
+    const cubre = Math.max(W / img.width, L.fotoAlto / img.height) * a.zoom;
+    const aw = img.width * cubre, ah = img.height * cubre;
+    // panX/panY dicen qué tanto del sobrante se recorta de cada lado: 0 pega
+    // la imagen contra el borde de arriba/izquierda, 1 contra el de abajo/derecha.
+    const dx = -(aw - W) * a.panX;
+    const dy = L.fotoY - (ah - L.fotoAlto) * a.panY;
     x.save(); x.beginPath(); x.rect(0, L.fotoY, W, L.fotoAlto); x.clip();
-    // anclada arriba: si hay que recortar, se recorta el cuerpo y no la cara
-    x.drawImage(img, (W - aw) / 2, L.fotoY, aw, ah);
+    x.drawImage(img, dx, dy, aw, ah);
     x.restore();
   } else {
     // Sin foto no dejamos un bloque gris enorme y mudo
@@ -2446,6 +2595,12 @@ async function vistaAfiche(codigo) {
   try { m = (await rest(`mascotas_publicas?codigo=eq.${encodeURIComponent(codigo)}&limit=1`))[0]; } catch { }
   if (!m) { main.innerHTML = `<div class="vacio"><b>No encontramos esa ficha</b></div>`; return; }
 
+  const foto = fotoPrincipal(m);
+  /* Un solo ajuste, reutilizado en los dos formatos: como zoom/pan se guardan
+     en fracciones (ver AjustadorFoto), sigue siendo válido al cambiar entre
+     "Publicación" e "Historia" aunque la franja de la foto cambie de forma. */
+  const estadoFoto = { url: foto, ajuste: { zoom: 1, panX: 0.5, panY: 0 } };
+
   main.innerHTML = `
     <a class="volver" href="/m/${m.codigo}" data-ruta>← Volver a la ficha</a>
     <h1 class="titulo-pagina">Afiche para compartir</h1>
@@ -2455,6 +2610,7 @@ async function vistaAfiche(codigo) {
       <label class="opcion"><input type="radio" name="formato" value="cuadrado" checked><span>Publicación</span></label>
       <label class="opcion"><input type="radio" name="formato" value="historia"><span>Historia</span></label>
     </div>
+    ${foto ? `<div id="ajuste-foto-caja"></div>` : ""}
     <img class="afiche-previa" id="previa" alt="Vista previa del afiche">
     <div class="botonera botonera--ancha" style="margin-top:16px">
       <button class="boton boton--compacto" id="btn-compartir">Compartir</button>
@@ -2467,11 +2623,30 @@ async function vistaAfiche(codigo) {
   const pintar = async () => {
     const f = leerRadio("formato") || "cuadrado";
     $("#previa").style.opacity = ".4";
-    lienzo = await dibujarAfiche(m, f);
+    lienzo = await dibujarAfiche(m, f, estadoFoto.ajuste);
     $("#previa").src = lienzo.toDataURL("image/png");
     $("#previa").style.opacity = "1";
   };
-  $$('input[name="formato"]').forEach(i => i.addEventListener("change", pintar));
+  const pintarLento = debounce(pintar, 200);   // mientras se arrastra o se hace zoom
+
+  const montarAjustador = () => {
+    const caja = $("#ajuste-foto-caja");
+    if (!caja) return;
+    const f = leerRadio("formato") || "cuadrado";
+    const l = LAYOUT_AFICHE[f];
+    const ajustador = AjustadorFoto(estadoFoto, {
+      aspecto: `${l.W}/${l.fotoAlto}`,
+      alCambiar: final => final ? pintar() : pintarLento()
+    });
+    caja.innerHTML = ajustador.html;
+    ajustador.conectar();
+  };
+
+  if (foto) montarAjustador();
+  $$('input[name="formato"]').forEach(i => i.addEventListener("change", () => {
+    if (foto) montarAjustador();   // el marco cambia de forma según el formato
+    pintar();
+  }));
   await pintar();
 
   const nombreArchivo = () =>

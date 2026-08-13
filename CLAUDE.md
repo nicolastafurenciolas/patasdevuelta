@@ -221,6 +221,27 @@ persona sí está mirando**, y cada uno cubre lo que los otros no:
 No quites ninguno pensando que se repiten: cubren personas distintas. Quien nunca vuelve
 a la portada sí abre su ficha; quien no agenda nada sí contesta un WhatsApp.
 
+### El afiche deja ajustar el recorte de la foto
+`vistaAfiche()` incluye un control de arrastrar y hacer zoom (`AjustadorFoto`, junto a
+`dibujarAfiche` en `app.js`) para elegir qué parte de la foto se ve en la franja del
+afiche, por si el animal no quedó centrado en la foto original.
+
+El ajuste se guarda como `{ zoom, panX, panY }` en **fracciones (0 a 1), no en píxeles**:
+así el mismo ajuste sirve igual sin importar el ancho de la franja, y no hay que
+recalcular nada al cambiar entre "Publicación" e "Historia". El valor por defecto
+(`zoom:1, panX:0.5, panY:0`) reproduce exactamente el recorte de antes de que existiera
+este control (centrado en horizontal, pegado arriba en vertical) — verificado
+comparando el PNG resultante byte a byte.
+
+Las medidas de los dos formatos viven en un solo lugar, `LAYOUT_AFICHE`: antes estaban
+repetidas dentro de `dibujarAfiche()`, y el control de recorte también las necesita para
+saber la proporción del marco. No las vuelvas a duplicar.
+
+**Al arrastrar, `marco.setPointerCapture()` puede lanzar `NotFoundError`** en algunos
+casos límite (se confirmó al simular el arrastre con eventos sintéticos durante las
+pruebas). Está en un `try/catch` a propósito: sin eso, el resto del gesto no se rompe,
+pero mejor no arriesgarse en un dispositivo real. No le quites el `try/catch`.
+
 ### Modo oscuro: dos trampas que ya se pisaron
 Sigue `prefers-color-scheme`, sin interruptor: acompaña lo que la persona ya eligió
 en su teléfono. Dos cosas que parecen detalles y no lo son:
@@ -360,6 +381,22 @@ En Netlify usa rutas normales.
   destinatarios del tipo contrario y a menos de 60 km, máximo 5, y nunca dos veces a la
   misma pareja. **No quites esas comprobaciones**: sin ellas esto sirve para molestar
   desconocidos.
+
+  **La ruta real de la función en Supabase puede no coincidir con su nombre.** El panel
+  web a veces le asigna a la función una ruta al azar (por ejemplo `clever-action`) en
+  vez de usar el nombre que se escribió al crearla — el "Name" de *Function
+  Configuration* es solo una etiqueta, no decide la URL. La ruta real que sí importa
+  está en la constante `RUTA_FUNCION_AVISOS` de `app.js`.
+
+  **Si el bloque de avisos no aparece en el panel de gestión, no es forzosamente un
+  problema de configuración.** `AVISOS.soportado()` da falso simplemente cuando el
+  navegador no expone `PushManager` — el caso más común con esta audiencia es iPhone sin
+  haber agregado la página a la pantalla de inicio. Esto pasó de verdad: el bloque
+  quedaba completamente vacío y sin ninguna explicación, como si la opción no existiera.
+  Ya está corregido — `AVISOS.motivoNoSoportado()` explica el motivo — pero si tocas ese
+  código en `vistaGestionar()`, ten cuidado: no está en una función propia, vive en el
+  cuerpo de `vistaGestionar()`, así que un `return` a medio camino ahí corta el resto del
+  panel (novedades, coincidencias, retirar publicación), no solo el bloque de avisos.
 - **No hay avisos por SMS ni WhatsApp automático**, y el correo tampoco funciona hoy. Conviene tenerlo claro porque es fácil creer lo
   contrario: `supabase/functions/notificar/index.ts` está escrita pero **no está conectada
   a nada** — no hay disparador en el esquema, ningún `webhook`, y `app.js` nunca la llama.
