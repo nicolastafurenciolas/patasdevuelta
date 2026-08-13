@@ -133,6 +133,15 @@ caen, o quien recoge al animal se lo quita antes de reportarlo. Solo cuenta como
 si ambos reportes lo describen, y se compara por palabras sueltas porque nadie lo
 describe igual ("collar rojo" vs "rojo con placa").
 
+**Las señas particulares (`rasgos`) SOLO SUMAN, NUNCA RESTAN.** Es texto libre y se
+compara por palabras compartidas. Si no hay ninguna en común, la señal ni siquiera
+participa — es indispensable, porque quien encuentra al animal muchas veces describe
+otra cosa ("estaba asustado y con hambre") aunque sea la misma mascota, y eso no puede
+contar como contradicción. Se ignoran las palabras que no distinguen a un animal de
+otro, y **a propósito también los colores y los tamaños**: esos ya tienen su propia
+señal y contarlos aquí sería cobrarlos dos veces. Medido: entre dos mascotas distintas
+que comparten palabras genéricas el puntaje no se mueve (19 → 19).
+
 Hay dos suites de pruebas, ambas en Node puro sin tocar la base de datos:
 `node pruebas/cruce.test.js` (20 casos de mano + simulacro de 90 fichas) y
 `node pruebas/adversario.test.js` (34 parejas que **sí** son la misma mascota, cada una
@@ -156,6 +165,25 @@ inventar. **No conviertas estos campos en obligatorios ni los subas al bloque pr
 
 El collar sí subió al bloque principal justamente por lo contrario: se ve de una, es de
 lo más identificador que existe, y el algoritmo lo usa.
+
+### Mantener la ficha al día sin poder mandar avisos
+No hay forma de avisarle a nadie por fuera de la página (ver sección 5), así que una
+ficha vieja solo se actualiza si quien publicó vuelve por su cuenta. En vez de un solo
+recordatorio, la pregunta "¿ya apareció?" está puesta en los **cuatro momentos en que esa
+persona sí está mirando**, y cada uno cubre lo que los otros no:
+
+1. **En su propia ficha pública** (`/m/CODIGO`). Si el token está en `localStorage` sale
+   una barra de dueño con el botón. Es el sitio que más visita quien publicó: para
+   compartirlo, para ver novedades, o al escanear el QR de su propio afiche.
+2. **Al volver de WhatsApp** después de escribirle a alguien que dice tener al animal.
+   Es el momento en que el reencuentro está más cerca; la pregunta ya está esperando.
+3. **Un evento en el calendario del propio celular** (`.ics`, botón "Recordármelo en 3
+   días"). Es lo único que de verdad le suena a la persona sin servidor, sin cuentas y
+   sin costo, y funciona igual en Android y iPhone.
+4. **El aviso en la portada** y el contador de novedades, que ya existían.
+
+No quites ninguno pensando que se repiten: cubren personas distintas. Quien nunca vuelve
+a la portada sí abre su ficha; quien no agenda nada sí contesta un WhatsApp.
 
 ### Alcance nacional, siempre
 33 departamentos y 1.104 municipios de Colombia están embebidos en
@@ -208,6 +236,10 @@ supabase/functions/notificar/       función Edge de Supabase (Deno) para avisos
 servidor-local.js                   servidor estático para revisar la página en el
                                      computador imitando a Netlify (rutas SPA).
                                      `node servidor-local.js` → localhost:4173
+construir-vista-previa.js           regenera vista-previa.html copiando styles.css y
+                                     app.js dentro. CÓRRELO cuando toques cualquiera
+                                     de los dos, o la vista previa muestra un diseño
+                                     que ya no existe (pasó).
 vista-previa.html                   archivo único autocontenido con datos de ejemplo
                                      y toda la red simulada, para ver el diseño en el
                                      celular sin necesitar Supabase configurado
