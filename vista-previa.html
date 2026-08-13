@@ -2954,6 +2954,7 @@ const ORDEN_TAMANO = { "Pequeño": 0, "Mediano": 1, "Grande": 2 };
 const PELOS = ["Corto", "Medio", "Largo"];
 const SEXOS = ["Macho", "Hembra", "No sé"];
 const EDADES = ["Cachorro", "Joven", "Adulto", "Viejito"];
+const ORDEN_EDAD = { "Cachorro": 0, "Joven": 1, "Adulto": 2, "Viejito": 3 };
 
 /* Cada color se describe por sus componentes visuales. Dos personas describen
    al mismo animal de forma distinta —"manchado" y "negro y blanco" son lo
@@ -3489,6 +3490,18 @@ function puntuar(base, cand) {
   }
 
   // --- Detalles
+  /* Edad: se trata como el tamaño, en escalones y con tolerancia. Un escalón de
+     diferencia casi no castiga porque nadie acierta la edad de un animal ajeno
+     a ojo, pero cachorro contra viejito sí es una contradicción de verdad.
+     El campo se pedía desde el principio y no entraba al cruce: era el único
+     dato que la gente llenaba sin que sirviera para nada. */
+  const ea = ORDEN_EDAD[base.edad_aprox], eb = ORDEN_EDAD[cand.edad_aprox];
+  if (ea != null && eb != null) {
+    const d = Math.abs(ea - eb);
+    senales.push([10, d === 0 ? 1 : d === 1 ? 0.5 : 0]);
+    if (d >= 3) castigos.push(0.75);      // cachorro contra viejito
+  }
+
   if (base.pelo && cand.pelo) senales.push([8, base.pelo === cand.pelo ? 1 : 0.15]);
   if (base.sexo && cand.sexo && base.sexo !== "No sé" && cand.sexo !== "No sé") {
     const igual = base.sexo === cand.sexo;
@@ -3842,12 +3855,41 @@ function vistaReportar(tipo) {
   });
   const inicio = Date.now();
 
+  /* Raza, sexo y edad cambian de sitio según QUIÉN está llenando el formulario,
+     y no es un capricho:
+
+     - Quien PERDIÓ a su mascota conoce cada dato y está dispuesto a darlos
+       todos. Para esa persona esconderlos solo le resta información al cruce.
+       Van a la vista, abiertos.
+     - Quien la ENCONTRÓ muchas veces no puede saberlos (el sexo no se ve sin
+       revisar al animal, la raza se adivina mal). Para esa persona van aparte,
+       diciéndole que en blanco es mejor que adivinado. Está medido: un campo
+       vacío casi no baja el puntaje, uno equivocado lo hunde hasta 53 puntos. */
+  const campoRaza = `
+    <div class="campo">
+      <label class="campo__etiqueta" for="raza">Raza o mezcla</label>
+      ${perdida ? `<span class="campo__ayuda">Aunque sea criollo, escríbelo: ayuda a descartar.</span>` : ""}
+      <input type="text" id="raza" maxlength="40" placeholder="Ej: criollo, labrador, siamés">
+    </div>`;
+  const campoSexo = `
+    <div class="campo">
+      <span class="campo__etiqueta">Sexo</span>
+      ${perdida ? "" : `<span class="campo__ayuda">Si no lo revisaste, "No sé" es la respuesta correcta.</span>`}
+      ${grupoOpciones("sexo", SEXOS)}
+    </div>`;
+  const campoEdad = `
+    <div class="campo">
+      <span class="campo__etiqueta">Edad aproximada</span>
+      ${perdida ? "" : `<span class="campo__ayuda">A ojo basta: un cachorro y un viejito se distinguen.</span>`}
+      ${grupoOpciones("edad", EDADES)}
+    </div>`;
+
   main.innerHTML = `
     <a class="volver" href="/" data-ruta>← Volver</a>
     <p class="paso">${perdida ? "Reporte de búsqueda" : "Reporte de hallazgo"}</p>
     <h1 class="titulo-pagina">${perdida ? "Publica a tu mascota" : "Reporta la mascota que encontraste"}</h1>
     <p class="intro-pagina">${perdida
-      ? "Con esto creamos su ficha, su afiche para compartir, y la empezamos a cruzar contra todos los hallazgos reportados."
+      ? "Con esto creamos su ficha, su afiche para compartir, y la empezamos a cruzar contra todos los hallazgos reportados. Llena todo lo que puedas: cada dato es una forma más de que alguien la reconozca, y de que puedas comprobar que de verdad es la tuya."
       : "Con la foto y el sitio ya podemos cruzarla contra las mascotas que están buscando cerca. Lo demás es opcional."}</p>
 
     <form class="form" id="form" novalidate>
@@ -3888,6 +3930,8 @@ function vistaReportar(tipo) {
           ${grupoOpciones("pelo", PELOS)}
         </div>
 
+        ${perdida ? campoSexo + campoEdad + campoRaza : ""}
+
         <div class="campo">
           <label class="campo__etiqueta" for="collar">¿Llevaba collar?</label>
           <span class="campo__ayuda">Si tiene, describe el color y si lleva placa. Es de las cosas
@@ -3909,28 +3953,22 @@ function vistaReportar(tipo) {
             adivinado. Medido en pruebas/adversario.test.js — un campo vacío casi
             no baja el puntaje, uno equivocado lo hunde hasta 53 puntos. */""}
       <details class="mas">
-        <summary>Si alcanzaste a fijarte (déjalo en blanco si no estás seguro)</summary>
+        <summary>${perdida
+          ? "Un dato más, por si lo tienes"
+          : "Si alcanzaste a fijarte (déjalo en blanco si no estás seguro)"}</summary>
         <div class="mas__cuerpo">
-          <p class="campo__ayuda">En serio: dejar algo vacío no estorba. Poner un dato equivocado
-            sí puede alejar a la mascota de su familia.</p>
-          <div class="campo">
-            <label class="campo__etiqueta" for="raza">Raza o mezcla</label>
-            <input type="text" id="raza" maxlength="40" placeholder="Ej: criollo, labrador, siamés">
-          </div>
-          <div class="campo">
-            <span class="campo__etiqueta">Sexo</span>
-            <span class="campo__ayuda">Si no lo revisaste, "No sé" es la respuesta correcta.</span>
-            ${grupoOpciones("sexo", SEXOS)}
-          </div>
-          <div class="campo">
-            <span class="campo__etiqueta">Edad aproximada</span>
-            ${grupoOpciones("edad", EDADES)}
-          </div>
           ${perdida ? `
           <div class="campo">
             <label class="campo__etiqueta" for="microchip">Número de microchip</label>
+            <span class="campo__ayuda">Si está registrado, una veterinaria puede leerlo y confirmar
+              que es tuyo sin lugar a dudas.</span>
             <input type="text" id="microchip" maxlength="40" placeholder="Si lo tiene registrado">
           </div>` : `
+          <p class="campo__ayuda">En serio: dejar algo vacío no estorba. Poner un dato equivocado
+            sí puede alejar a la mascota de su familia.</p>
+          ${campoRaza}
+          ${campoSexo}
+          ${campoEdad}
           <div class="campo">
             <label class="campo__etiqueta" for="descripcion">¿En qué estado estaba?</label>
             <textarea id="descripcion" maxlength="300" placeholder="Ej: asustado pero sano, lo tengo en mi casa"></textarea>
@@ -4529,13 +4567,26 @@ async function vistaGestionar(token, params) {
     <a class="volver" href="/" data-ruta>← Inicio</a>
 
     ${nuevo ? `<div class="aviso aviso--verde">
-      <strong>Publicado.</strong> Guarda este enlace: es la única forma de volver a administrar tu
-      publicación desde otro teléfono. No pide contraseña, así que no lo compartas.
+      <strong>Publicado.</strong> Este enlace es tu llave: con él vuelves a entrar a ver novedades
+      y coincidencias, aunque cambies de teléfono o borres los datos del navegador.
+      No pide contraseña, así que no se lo pases a nadie.
       <div class="token-caja">${esc(gestion)}</div>
       <div class="botonera">
-        <button class="boton boton--claro boton--compacto" id="copiar-gestion">Copiar el enlace</button>
-        <a class="boton boton--claro boton--compacto" href="${esc(enlaceWhatsapp("", ""))}" id="guardar-wa" hidden>Enviármelo</a>
-      </div></div>` : ""}
+        ${/* Mandárselo por WhatsApp a uno mismo es la forma más segura de no
+              perderlo nunca: queda en una conversación que sobrevive al cambio
+              de celular, al formateo y a que se borre el navegador. */""}
+        ${m.contacto_tel ? `<a class="boton boton--verde boton--compacto" target="_blank" rel="noopener"
+           href="${esc(enlaceWhatsapp(m.contacto_tel,
+             `Mi publicación en Patas de vuelta — ${m.nombre || m.especie} (código ${m.codigo}). ` +
+             `Con este enlace entro a ver novedades y a marcar cuando aparezca:\n${gestion}`))}"
+           id="guardar-wa">Enviármelo por WhatsApp</a>` : ""}
+        <button class="boton boton--claro boton--compacto" id="copiar-gestion">Copiar</button>
+        <button class="boton boton--claro boton--compacto" id="recordar-nuevo">Agendar recordatorio</button>
+      </div>
+      <p class="pista__nota">Queda guardado en este navegador, pero eso se pierde si borras los
+        datos o cambias de celular. <strong>Mándatelo por WhatsApp:</strong> es lo único que
+        sobrevive a que el teléfono se dañe, se pierda o se cambie.</p>
+      </div>` : ""}
 
     <h1 class="titulo-pagina">${esc(m.nombre || m.especie)}</h1>
     <p class="intro-pagina">Código <strong>${esc(m.codigo)}</strong> ·
@@ -4563,6 +4614,19 @@ async function vistaGestionar(token, params) {
       <a class="boton boton--claro boton--compacto" href="/editar/${m.token_gestion}" data-ruta>Corregir datos</a>
       <button class="boton boton--claro boton--compacto" id="btn-copiar">Copiar enlace</button>
     </div>
+
+    ${/* Siempre a la mano, no solo al publicar: mucha gente entra por primera vez
+          desde el navegador y nunca guarda la llave. */""}
+    ${!nuevo && m.contacto_tel ? `
+    <div class="aviso">
+      <p style="margin:0 0 10px"><strong>¿Ya guardaste tu enlace de administración?</strong>
+        Si borras los datos del navegador o cambias de celular, es la única forma de volver a entrar.</p>
+      <a class="boton boton--claro boton--compacto" target="_blank" rel="noopener"
+         href="${esc(enlaceWhatsapp(m.contacto_tel,
+           `Mi publicación en Patas de vuelta — ${m.nombre || m.especie} (código ${m.codigo}). ` +
+           `Con este enlace entro a ver novedades y a marcar cuando aparezca:\n${gestion}`))}">
+        Enviármelo por WhatsApp</a>
+    </div>` : ""}
 
     <div id="tras-escribir"></div>
 
@@ -4597,6 +4661,7 @@ async function vistaGestionar(token, params) {
   });
   $("#btn-afiche2").addEventListener("click", () => navegar(`/afiche/${m.codigo}`));
   $("#btn-recordar")?.addEventListener("click", () => descargarRecordatorio(m, gestion));
+  $("#recordar-nuevo")?.addEventListener("click", () => descargarRecordatorio(m, gestion));
 
   /* Escribirle a alguien que dice tener al animal es el momento en que el
      reencuentro está más cerca. Al volver de WhatsApp la pregunta ya está
@@ -4649,7 +4714,27 @@ async function vistaGestionar(token, params) {
   if (!resuelto) {
     buscarCoincidencias(m).then(cs => {
       if (!cs.length) return;
-      $("#coincidencias2").innerHTML = `<h2 class="seccion__titulo">Revisa estas ${cs.length}</h2>
+
+      /* Si acaba de publicar un hallazgo y hay una coincidencia muy fuerte, no
+         sirve solo listarla: quien tiene al animal en las manos es esta persona,
+         y es la que puede resolver el caso ahora mismo. En vez de esperar a que
+         el dueño entre algún día (no tenemos cómo avisarle), le ponemos aquí el
+         botón para escribirle de una. */
+      const fuertes = cs.filter(c => c.total >= 72);
+      const empujon = fuertes.length && m.tipo === "encontrada" ? `
+        <div class="aviso aviso--verde">
+          <p style="margin:0 0 6px"><strong>${fuertes.length === 1
+            ? "Hay una mascota que se parece muchísimo a la que encontraste."
+            : `Hay ${fuertes.length} mascotas que se parecen muchísimo a la que encontraste.`}</strong></p>
+          <p style="margin:0 0 10px">Su familia la está buscando y no tiene forma de saber que
+            apareció. Ábrela y toca <em>"Creo que es mi mascota"</em>: el contacto se revela al
+            instante y les escribes por WhatsApp.</p>
+          <a class="boton boton--verde boton--compacto" href="/m/${fuertes[0].codigo}" data-ruta>
+            Abrir la más parecida</a>
+        </div>` : "";
+
+      $("#coincidencias2").innerHTML = empujon +
+        `<h2 class="seccion__titulo">Revisa estas ${cs.length}</h2>
         <p class="parrafo">Coinciden en zona y características. Míralas una por una: toma tres segundos.</p>
         ${cs.map(filaCoincidencia).join("")}`;
     }).catch(() => { });

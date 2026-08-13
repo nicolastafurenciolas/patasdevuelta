@@ -10,6 +10,7 @@
 // ============================================================
 
 const ORDEN_TAMANO = { "Pequeño": 0, "Mediano": 1, "Grande": 2 };
+const ORDEN_EDAD = { "Cachorro": 0, "Joven": 1, "Adulto": 2, "Viejito": 3 };
 
 const COLORES = [
   { k: "negro",    n: "Negro",    comp: ["negro"] },
@@ -167,6 +168,13 @@ function puntuar(base, cand) {
     if (col < 0.15) castigos.push(0.6);
   }
 
+  const ea = ORDEN_EDAD[base.edad_aprox], eb = ORDEN_EDAD[cand.edad_aprox];
+  if (ea != null && eb != null) {
+    const d = Math.abs(ea - eb);
+    senales.push([10, d === 0 ? 1 : d === 1 ? 0.5 : 0]);
+    if (d >= 3) castigos.push(0.75);
+  }
+
   if (base.pelo && cand.pelo) senales.push([8, base.pelo === cand.pelo ? 1 : 0.15]);
   if (base.sexo && cand.sexo && base.sexo !== "No sé" && cand.sexo !== "No sé") {
     const igual = base.sexo === cand.sexo;
@@ -251,7 +259,7 @@ const dias = (fecha, n) => {
 };
 
 module.exports = {
-  ORDEN_TAMANO, COLORES, MAPA_COLOR,
+  ORDEN_TAMANO, ORDEN_EDAD, COLORES, MAPA_COLOR,
   distanciaKm, distanciaTexto, parecidoColor, parecidoPaleta, normalizarTexto, parecidoCollar, parecidoRasgos,
   puntuar, banda, candidatosPara, coincidenciasDe, dias, verificarSincronia
 };

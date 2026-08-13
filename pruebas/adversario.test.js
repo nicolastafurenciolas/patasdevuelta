@@ -42,6 +42,7 @@ const COLLARES = ["collar rojo", "collar azul", "collar negro", "collar con plac
                   "collar verde", "rojo con placa", "collar de cuero café", null, null, null];
 // Señas del ruido: mezcla de señas reales y de frases genéricas, como en la vida
 // real. Sin esto, medir la señal de rasgos sería trampa.
+const EDADES_RUIDO = ["Cachorro", "Joven", "Adulto", "Adulto", "Viejito", null, null];
 const RASGOS_RUIDO = [
   "mancha blanca en el pecho", "le falta un pedazo de la oreja", "cojea de la pata trasera",
   "tiene la cola muy corta", "cicatriz en el lomo", "un ojo de cada color",
@@ -63,7 +64,7 @@ function ruidoDeFondo(especie, lat, lng, n = 150) {
       municipio: "Manizales", departamento: "Caldas",
       tamano: elegir(TAMANOS), colores: [elegir(PALETAS)],
       pelo: elegir(PELOS), sexo: elegir(SEXOS), raza: elegir(RAZAS),
-      collar: elegir(COLLARES), rasgos: elegir(RASGOS_RUIDO)
+      collar: elegir(COLLARES), rasgos: elegir(RASGOS_RUIDO), edad_aprox: elegir(EDADES_RUIDO)
     };
     if (incompleto) {
       const op = ["pelo", "sexo", "raza", "colores"];
@@ -384,6 +385,33 @@ escenario("F", "Plural contra singular ('manchas' vs 'mancha')",
   "Se quita la 's' final: 'manchas'→'mancha', 'patas'→'pata'.");
 
 // ============================================================
+//  BLOQUE G — La edad
+//  Se trata como el tamaño: en escalones y con tolerancia, porque nadie
+//  acierta la edad de un animal ajeno a ojo. Pero cachorro contra viejito
+//  sí es una contradicción de verdad.
+// ============================================================
+
+escenario("G", "Misma edad reportada por los dos",
+  { ...DUENO_COMPLETO, edad_aprox: "Adulto" },
+  { ...DUENO_COMPLETO, edad_aprox: "Adulto", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Coincide: debe sumar.");
+
+escenario("G", "Un escalón de diferencia (Joven vs Adulto): casi no debe castigar",
+  { ...DUENO_COMPLETO, edad_aprox: "Joven" },
+  { ...DUENO_COMPLETO, edad_aprox: "Adulto", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Tolerancia diseñada: la gente calcula mal la edad.");
+
+escenario("G", "Cachorro contra viejito: contradicción de verdad",
+  { ...DUENO_COMPLETO, edad_aprox: "Cachorro" },
+  { ...DUENO_COMPLETO, edad_aprox: "Viejito", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Tres escalones: señal en 0 y castigo. Aun así no debe desaparecer.");
+
+escenario("G", "Solo uno reportó la edad: no debe castigar",
+  { ...DUENO_COMPLETO, edad_aprox: "Adulto" },
+  { ...DUENO_COMPLETO, fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Señal ausente: se decide con menos evidencia, sin penalizar.");
+
+// ============================================================
 //  INFORME
 // ============================================================
 
@@ -393,7 +421,8 @@ const NOMBRE_BLOQUE = {
   C: "C — Improbables pero posibles",
   D: "D — Fallas acumuladas (el peor escenario realista)",
   E: "E — El collar",
-  F: "F — Las señas particulares (señal nueva)"
+  F: "F — Las señas particulares",
+  G: "G — La edad (señal nueva)"
 };
 
 console.log("\n============================================================");
@@ -405,7 +434,7 @@ console.log("============================================================");
 
 let recuperadas = 0, perdidasTotales = 0, asimetrias = 0;
 
-for (const b of ["A", "B", "C", "D", "E", "F"]) {
+for (const b of ["A", "B", "C", "D", "E", "F", "G"]) {
   console.log(`\n--- ${NOMBRE_BLOQUE[b]} ---\n`);
   for (const r of resultados.filter(x => x.bloque === b)) {
     if (r.bien) recuperadas++; else perdidasTotales++;
