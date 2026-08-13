@@ -3082,6 +3082,87 @@ const MIS = {
   }
 };
 
+/* ---------- AVISOS PUSH ----------
+   Lo único que le suena a la persona sin que tenga que volver a entrar.
+
+   Se pide el permiso JUSTO DESPUÉS de publicar, nunca al entrar a la página:
+   ahí es cuando de verdad lo quiere, y el navegador solo deja preguntar una
+   vez — si lo niega, no se le puede volver a pedir con un botón.
+
+   Todo esto es opcional y falla en silencio: si el navegador no lo soporta
+   (iPhone sin agregar a pantalla de inicio, navegadores viejos) o la persona
+   dice que no, la página sigue funcionando igual que siempre. */
+const AVISOS = {
+  // Los avisos exigen conexión segura. localhost cuenta como segura, y es lo
+  // que permite probar todo esto en el computador antes de desplegar.
+  soportado: () => "serviceWorker" in navigator && "PushManager" in window &&
+                   "Notification" in window &&
+                   (location.protocol === "https:" || location.hostname === "localhost"),
+
+  yaDecidio: () => "Notification" in window && Notification.permission !== "default",
+  concedido: () => "Notification" in window && Notification.permission === "granted",
+
+  /* La clave pública del servidor de avisos. La pedimos a la función Edge en
+     vez de escribirla en config.js para que no haya un dato más que copiar a
+     mano al montar el proyecto. Se guarda para no volver a pedirla. */
+  async clavePublica() {
+    const guardada = localStorage.getItem("patas_vapid");
+    if (guardada) return guardada;
+    const r = await fetch(`${API}/functions/v1/avisar`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    });
+    const d = await r.json();
+    if (!d.clave) throw new Error("El servidor de avisos no está configurado");
+    localStorage.setItem("patas_vapid", d.clave);
+    return d.clave;
+  },
+
+  // El navegador exige la clave como bytes, no como texto
+  aBytes(base64) {
+    const relleno = "=".repeat((4 - base64.length % 4) % 4);
+    const limpio = (base64 + relleno).replace(/-/g, "+").replace(/_/g, "/");
+    const crudo = atob(limpio);
+    return Uint8Array.from([...crudo].map(c => c.charCodeAt(0)));
+  },
+
+  async activar(token) {
+    if (!AVISOS.soportado()) throw new Error("Este navegador no puede mostrar avisos");
+    const permiso = await Notification.requestPermission();
+    if (permiso !== "granted") throw new Error("No diste permiso para los avisos");
+
+    const registro = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+
+    const clave = await AVISOS.clavePublica();
+    const suscripcion = await registro.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: AVISOS.aBytes(clave)
+    });
+
+    const ok = await rpc("guardar_suscripcion", {
+      p_token: token, p_suscripcion: suscripcion.toJSON()
+    });
+    if (!ok) throw new Error("No se pudo guardar el aviso");
+    return true;
+  },
+
+  /* Le pide al servidor que avise a los dueños de las coincidencias fuertes.
+     Lo llama quien acaba de publicar un hallazgo: es el único momento en que
+     el servidor lo acepta. Si algo falla, no pasa nada — la publicación ya
+     está hecha y las coincidencias ya se ven en pantalla. */
+  async avisarCoincidencias(token, codigos) {
+    if (!codigos.length) return { enviados: 0 };
+    try {
+      const r = await fetch(`${API}/functions/v1/avisar`, {
+        method: "POST",
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ token, codigos })
+      });
+      return await r.json();
+    } catch { return { enviados: 0 }; }
+  }
+};
+
 /* ============================================================
    3. ACCESO A DATOS
    ============================================================ */
@@ -4686,6 +4767,7 @@ async function vistaGestionar(token, params) {
         Enviármelo por WhatsApp</a>
     </div>` : ""}
 
+    <div id="avisos-push"></div>
     <div id="tras-escribir"></div>
 
     <h2 class="seccion__titulo">Novedades (${pistas.length})</h2>
@@ -4720,6 +4802,48 @@ async function vistaGestionar(token, params) {
   $("#btn-afiche2").addEventListener("click", () => navegar(`/afiche/${m.codigo}`));
   $("#btn-recordar")?.addEventListener("click", () => descargarRecordatorio(m, gestion));
   $("#recordar-nuevo")?.addEventListener("click", () => descargarRecordatorio(m, gestion));
+
+  /* ---------- Avisos push ----------
+     Solo se ofrece si el navegador puede, y solo mientras el caso siga abierto.
+     Si la persona ya dijo que no, no insistimos con un botón que no va a
+     funcionar: el navegador no vuelve a preguntar. */
+  if (!resuelto && AVISOS.soportado()) {
+    const caja = $("#avisos-push");
+    const pintarAvisos = (estado) => {
+      if (estado === "activo") {
+        caja.innerHTML = `<div class="aviso aviso--verde">
+          <strong>Avisos activados en este teléfono.</strong> Si alguien publica una mascota que
+          se parece mucho a ${esc(m.nombre || "la tuya")}, te suena aquí aunque tengas la página cerrada.</div>`;
+      } else if (estado === "negado") {
+        caja.innerHTML = `<div class="aviso">
+          <strong>Los avisos están bloqueados en este navegador.</strong> Se pueden volver a permitir
+          desde los ajustes del sitio, en el candado de la barra de direcciones.</div>`;
+      } else {
+        caja.innerHTML = `<div class="aviso">
+          <p style="margin:0 0 10px"><strong>¿Te avisamos apenas aparezca algo?</strong>
+            Te suena en este teléfono si alguien publica una mascota parecida, sin que tengas
+            que entrar a revisar.</p>
+          <button class="boton boton--claro boton--compacto" id="btn-activar-avisos">Activar avisos</button></div>`;
+        $("#btn-activar-avisos").addEventListener("click", async () => {
+          const b = $("#btn-activar-avisos");
+          b.disabled = true; b.textContent = "Activando…";
+          try {
+            await AVISOS.activar(token);
+            pintarAvisos("activo");
+            brindis("Listo. Te avisamos apenas haya algo.", 4500);
+          } catch (e) {
+            pintarAvisos(Notification.permission === "denied" ? "negado" : "sin");
+            brindis(e.message || "No se pudieron activar los avisos.", 4500);
+          }
+        });
+      }
+    };
+
+    if (Notification.permission === "denied") pintarAvisos("negado");
+    else rpc("tiene_suscripcion", { p_token: token })
+      .then(tiene => pintarAvisos(tiene && AVISOS.concedido() ? "activo" : "sin"))
+      .catch(() => pintarAvisos("sin"));
+  }
 
   /* Escribirle a alguien que dice tener al animal es el momento en que el
      reencuentro está más cerca. Al volver de WhatsApp la pregunta ya está
@@ -4779,6 +4903,14 @@ async function vistaGestionar(token, params) {
          el dueño entre algún día (no tenemos cómo avisarle), le ponemos aquí el
          botón para escribirle de una. */
       const fuertes = cs.filter(c => c.total >= 72);
+
+      /* Le pedimos al servidor que le avise a quien está buscando esas
+         mascotas. Solo al publicar un hallazgo, que es el único momento en que
+         el servidor acepta la petición, y sin esperar la respuesta: si falla,
+         la publicación ya está hecha y las coincidencias ya se ven aquí. */
+      if (nuevo && m.tipo === "encontrada" && fuertes.length) {
+        AVISOS.avisarCoincidencias(token, fuertes.map(c => c.codigo)).catch(() => { });
+      }
       const empujon = fuertes.length && m.tipo === "encontrada" ? `
         <div class="aviso aviso--verde">
           <p style="margin:0 0 6px"><strong>${fuertes.length === 1

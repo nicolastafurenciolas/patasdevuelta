@@ -343,3 +343,78 @@ create policy "fotos lectura publica" on storage.objects
 drop policy if exists "fotos subida publica" on storage.objects;
 create policy "fotos subida publica" on storage.objects
   for insert to anon, authenticated with check (bucket_id = 'fotos');
+
+-- ============================================================
+--  AVISOS PUSH
+--  Es la única forma de avisarle a alguien sin que tenga que volver a
+--  entrar por su cuenta. Sigue el mismo patrón que todo lo demás: la
+--  tabla queda cerrada por completo para la clave pública y todo pasa
+--  por funciones que validan antes de tocar los datos.
+-- ============================================================
+
+create table if not exists suscripciones_push (
+  id          uuid primary key default gen_random_uuid(),
+  mascota_id  uuid not null references mascotas(id) on delete cascade,
+  endpoint    text not null,
+  datos       jsonb not null,          -- la suscripción completa del navegador
+  creado      timestamptz not null default now(),
+  unique (mascota_id, endpoint)        -- el mismo teléfono no se suscribe dos veces
+);
+create index if not exists ix_suscripciones_mascota on suscripciones_push(mascota_id);
+
+-- Deja constancia de a quién ya se le avisó por cuál hallazgo, para que la
+-- misma pareja no vuelva a sonar nunca. Sin esto, recargar la página de quien
+-- publicó el hallazgo le repetiría el aviso al dueño una y otra vez.
+create table if not exists avisos_enviados (
+  mascota_destino uuid not null references mascotas(id) on delete cascade,
+  mascota_origen  uuid not null references mascotas(id) on delete cascade,
+  creado          timestamptz not null default now(),
+  primary key (mascota_destino, mascota_origen)
+);
+
+alter table suscripciones_push enable row level security;
+alter table avisos_enviados    enable row level security;
+revoke all on suscripciones_push from anon, authenticated;
+revoke all on avisos_enviados    from anon, authenticated;
+
+-- Guardar la suscripción: solo quien tiene el enlace de gestión puede pedir
+-- que le avisen sobre ESA publicación.
+create or replace function guardar_suscripcion(p_token text, p_suscripcion jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_id uuid; v_endpoint text;
+begin
+  select id into v_id from mascotas where token_gestion = p_token;
+  if v_id is null then return false; end if;
+
+  v_endpoint := p_suscripcion->>'endpoint';
+  if coalesce(v_endpoint,'') = '' then return false; end if;
+
+  insert into suscripciones_push (mascota_id, endpoint, datos)
+  values (v_id, v_endpoint, p_suscripcion)
+  on conflict (mascota_id, endpoint) do update set datos = excluded.datos, creado = now();
+  return true;
+end; $$;
+
+create or replace function quitar_suscripcion(p_token text, p_endpoint text)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  select id into v_id from mascotas where token_gestion = p_token;
+  if v_id is null then return false; end if;
+  delete from suscripciones_push where mascota_id = v_id and endpoint = p_endpoint;
+  return true;
+end; $$;
+
+-- ¿Esta publicación tiene avisos activados en algún teléfono?
+create or replace function tiene_suscripcion(p_token text)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  select id into v_id from mascotas where token_gestion = p_token;
+  if v_id is null then return false; end if;
+  return exists (select 1 from suscripciones_push where mascota_id = v_id);
+end; $$;
+
+grant execute on function guardar_suscripcion(text, jsonb) to anon, authenticated;
+grant execute on function quitar_suscripcion(text, text)   to anon, authenticated;
+grant execute on function tiene_suscripcion(text)          to anon, authenticated;
