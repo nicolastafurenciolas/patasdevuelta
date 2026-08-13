@@ -305,6 +305,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
 .afiche-formatos .opcion{flex:1}
 .afiche-formatos .opcion span{text-align:center}
 
+/* ---------- AJUSTE DE FOTO DEL AFICHE ---------- */
+.ajuste-foto{margin:4px 0 14px}
+.ajuste-foto__marco{
+  position:relative; overflow:hidden; width:100%;
+  border:1.5px solid var(--linea); border-radius:var(--radio-s); background:var(--hueco);
+  cursor:grab; touch-action:none;  /* sin esto el navegador se roba el arrastre para hacer scroll */
+  -webkit-user-select:none; user-select:none;
+}
+.ajuste-foto__marco--arrastrando{cursor:grabbing}
+.ajuste-foto__marco img{
+  position:absolute; top:0; left:0; max-width:none;
+  -webkit-user-drag:none; pointer-events:none;  /* el drag lo maneja el marco, no la imagen */
+}
+.ajuste-foto__controles{display:flex; align-items:center; gap:10px; margin-top:8px}
+.ajuste-foto__icono{font-size:15px; flex:none}
+.ajuste-foto__controles input[type=range]{flex:1; width:auto; padding:0; accent-color:var(--tinta)}
+
 /* ---------- FILTROS ---------- */
 .filtros{background:var(--papel-alto); border:1px solid var(--linea); border-radius:var(--radio); padding:14px; margin-bottom:18px}
 .filtros__fila{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
