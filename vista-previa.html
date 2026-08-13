@@ -46,7 +46,51 @@
   --display:"Bricolage Grotesque", "Trebuchet MS", sans-serif;
   --cuerpo:"Instrument Sans", system-ui, -apple-system, sans-serif;
   --mono:"Space Mono", ui-monospace, monospace;
+
+  --hueco:#E7E4D7;          /* fondo de las fotos mientras cargan */
+  --sobre-marcador:#12211C; /* tinta que va ENCIMA del amarillo: nunca se aclara */
+  --sombra-boton:rgba(18,33,28,.25);
+
+  color-scheme:light;
 }
+
+/* ============================================================
+   MODO OSCURO
+   Sigue lo que la persona ya eligió en su teléfono. Mucha gente lo
+   tiene puesto todo el día, y una mascota se pierde también de noche:
+   una pantalla color papel a las 2 de la mañana encandila.
+
+   Dos cuidados que no son obvios:
+   - El amarillo del resaltador NO cambia, así que el texto encima
+     tiene que seguir siendo oscuro (--sobre-marcador). Si se aclarara
+     con el resto quedaría ilegible.
+   - Rojo y verde se mantienen sólidos donde son FONDO de una insignia
+     con texto blanco, y se aclaran aparte donde son TEXTO sobre el
+     fondo oscuro. Es el mismo color cumpliendo dos papeles distintos.
+   ============================================================ */
+@media (prefers-color-scheme:dark){
+  :root{
+    --tinta:#E7E5DA;
+    --tinta-suave:#9DAAA2;
+    --papel:#101A16;
+    --papel-alto:#17241F;
+    --linea:#2C3B34;
+
+    --perdida:#C6402A;
+    --perdida-fondo:#2E1713;
+    --encontrada:#177A51;
+    --encontrada-fondo:#12261C;
+
+    --hueco:#22302A;
+    --sombra:0 1px 0 var(--linea), 0 6px 22px -14px rgba(0,0,0,.7);
+    --sombra-boton:rgba(0,0,0,.5);
+
+    color-scheme:dark;
+  }
+}
+/* Los ajustes por componente del modo oscuro van al FINAL del archivo, no aquí:
+   tienen la misma especificidad que las reglas normales, así que si fueran
+   antes la cascada los anularía. Busca "AJUSTES DEL MODO OSCURO" abajo. */
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -140,7 +184,7 @@ main{max-width:var(--ancho); margin:0 auto; padding:0 18px 60px}
   transition:border-color .12s;
 }
 .tarjeta:hover{border-color:var(--tinta)}
-.tarjeta__foto{aspect-ratio:1; background:#E7E4D7 center/cover no-repeat; position:relative}
+.tarjeta__foto{aspect-ratio:1; background:var(--hueco) center/cover no-repeat; position:relative}
 .tarjeta__etiqueta{
   position:absolute; top:7px; left:7px; font-size:10.5px; font-weight:700;
   text-transform:uppercase; letter-spacing:.06em; padding:3px 7px; border-radius:20px;
@@ -201,7 +245,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
 .foto-previa{border-radius:var(--radio); border:1px solid var(--linea); width:100%; aspect-ratio:1; object-fit:cover}
 .foto-cambiar{margin-top:8px; font-size:14px; text-decoration:underline; background:none; border:none; padding:0; cursor:pointer; color:var(--tinta-suave)}
 
-.mapa{height:280px; border-radius:var(--radio); border:1.5px solid var(--linea); overflow:hidden; background:#E7E4D7; z-index:0}
+.mapa{height:280px; border-radius:var(--radio); border:1.5px solid var(--linea); overflow:hidden; background:var(--hueco); z-index:0}
 .mapa--ficha{height:220px; margin:4px 0 6px}
 .mapa__pie{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px}
 .mapa__estado{font-size:13.5px; color:var(--tinta-suave); line-height:1.4; flex:1 1 180px}
@@ -214,9 +258,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   width:100%; padding:15px 20px; border:2px solid var(--tinta); border-radius:var(--radio);
   background:var(--tinta); color:var(--papel-alto); font-family:var(--display);
   font-weight:700; font-size:18px; letter-spacing:-.01em; cursor:pointer;
-  box-shadow:4px 4px 0 rgba(18,33,28,.25); transition:transform .12s, box-shadow .12s;
+  box-shadow:4px 4px 0 var(--sombra-boton); transition:transform .12s, box-shadow .12s;
 }
-.boton:active{transform:translate(3px,3px); box-shadow:1px 1px 0 rgba(18,33,28,.25)}
+.boton:active{transform:translate(3px,3px); box-shadow:1px 1px 0 var(--sombra-boton)}
 .boton[disabled]{opacity:.55; cursor:wait}
 .boton--claro{background:var(--papel-alto); color:var(--tinta)}
 .boton--verde{background:var(--encontrada); border-color:var(--encontrada); color:#fff}
@@ -270,8 +314,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   border-radius:var(--radio-s); padding:10px; margin-bottom:9px;
 }
 .coincidencia:hover{border-color:var(--tinta)}
-.coincidencia img{width:66px; height:66px; object-fit:cover; border-radius:8px; flex:none; background:#E7E4D7}
-.coincidencia__sinfoto{width:66px; height:66px; border-radius:8px; flex:none; background:#E7E4D7;
+.coincidencia img{width:66px; height:66px; object-fit:cover; border-radius:8px; flex:none; background:var(--hueco)}
+.coincidencia__sinfoto{width:66px; height:66px; border-radius:8px; flex:none; background:var(--hueco);
   display:flex; align-items:center; justify-content:center; font-size:26px; opacity:.5}
 .coincidencia b{display:block; font-family:var(--display); font-size:16px; letter-spacing:-.01em}
 .coincidencia span{font-size:13px; color:var(--tinta-suave); display:block; line-height:1.35}
@@ -416,6 +460,28 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   font-size:10.5px; padding:3px 7px; border-radius:20px}
 .pista--tengo{border-left:4px solid var(--encontrada)}
 .pista__nota{font-size:13px; color:var(--tinta-suave); margin:8px 0 0}
+
+/* ============================================================
+   AJUSTES DEL MODO OSCURO (por componente)
+   Van al final a propósito: tienen la misma especificidad que las
+   reglas de arriba, así que la cascada solo los aplica si vienen
+   después. Puestos arriba quedaban anulados en silencio.
+   ============================================================ */
+@media (prefers-color-scheme:dark){
+  /* El amarillo del resaltador no cambia: lo que va encima sigue oscuro */
+  .marca-texto, .insignia--media, .banda--sin-confirmar,
+  .banda--sin-confirmar small{color:var(--sobre-marcador)}
+
+  /* Rojo y verde se aclaran SOLO donde son texto sobre el fondo oscuro.
+     Donde son fondo de una insignia con letra blanca se quedan sólidos. */
+  .marca__huella, .accion--perdida b, .campo__error{color:#FF9C86}
+  .accion--encontrada b, .cifra--verde b,
+  .mapa__estado--bien, .coincidencia__razones{color:#7FE3B0}
+
+  /* El mapa de OpenStreetMap es claro; lo bajamos un poco para que no
+     deslumbre, sin invertirlo (un mapa invertido no se lee). */
+  .leaflet-tile{filter:brightness(.82) contrast(1.05) saturate(.9)}
+}
 </style>
 </head>
 <body>

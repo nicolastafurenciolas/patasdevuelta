@@ -13,3 +13,7 @@ Thumbs.db
 
 # Dependencias (si en algún momento se usa npm para algo puntual)
 node_modules/
+
+# Lista de las publicaciones de prueba sembradas: lleva los tokens de gestión,
+# que son enlaces de administración sin contraseña. No van al repositorio.
+pruebas/ruido-sembrado.json

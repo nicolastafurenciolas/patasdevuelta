@@ -185,6 +185,22 @@ persona sí está mirando**, y cada uno cubre lo que los otros no:
 No quites ninguno pensando que se repiten: cubren personas distintas. Quien nunca vuelve
 a la portada sí abre su ficha; quien no agenda nada sí contesta un WhatsApp.
 
+### Modo oscuro: dos trampas que ya se pisaron
+Sigue `prefers-color-scheme`, sin interruptor: acompaña lo que la persona ya eligió
+en su teléfono. Dos cosas que parecen detalles y no lo son:
+
+1. **El amarillo del resaltador no cambia**, así que el texto que va encima debe
+   quedarse oscuro (`--sobre-marcador`). Si se aclarara con el resto de la tipografía,
+   quedaría amarillo sobre amarillo.
+2. **Los ajustes por componente van al FINAL de `styles.css`**, no junto al bloque
+   `:root` del modo oscuro. Tienen la misma especificidad que las reglas normales, así
+   que puestos arriba la cascada los anula **en silencio** — pasó, y los títulos de la
+   portada quedaron en 3.19 de contraste creyendo que estaban en 5.75.
+
+Rojo y verde cumplen dos papeles: como **fondo** de insignias con letra blanca se
+quedan sólidos, y como **texto** sobre el fondo oscuro se aclaran aparte. Los 13
+componentes están medidos y pasan AA.
+
 ### Alcance nacional, siempre
 33 departamentos y 1.104 municipios de Colombia están embebidos en
 `datos-colombia.js` (fuente: DIVIPOLA). No lo reduzcas a una lista corta de ciudades
@@ -236,6 +252,16 @@ supabase/functions/notificar/       función Edge de Supabase (Deno) para avisos
 servidor-local.js                   servidor estático para revisar la página en el
                                      computador imitando a Netlify (rutas SPA).
                                      `node servidor-local.js` → localhost:4173
+pruebas/sembrar-ruido.js            crea publicaciones de mentira en la base REAL
+                                     para probar el cruce con competencia. Todas
+                                     quedan marcadas con
+                                     contacto_email = ruido-de-prueba@patasdevuelta.test
+                                     (columna que NO está en la vista pública), así
+                                     que se borran de un solo golpe con:
+                                     delete from mascotas where contacto_email = '…';
+pruebas/borrar-ruido.js             las quita de la página al instante (las pone en
+                                     "oculto"). Ocultar no es borrar: para eliminarlas
+                                     de la base hay que correr el SQL de arriba.
 construir-vista-previa.js           regenera vista-previa.html copiando styles.css y
                                      app.js dentro. CÓRRELO cuando toques cualquiera
                                      de los dos, o la vista previa muestra un diseño
