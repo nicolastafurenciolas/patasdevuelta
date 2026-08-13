@@ -205,6 +205,9 @@ supabase-schema.sql                 esquema completo: tablas, vistas, funciones,
 supabase/functions/notificar/       función Edge de Supabase (Deno) para avisos por
   index.ts                          correo cuando llega una pista — OPCIONAL, no es
                                      el mecanismo principal de contacto
+servidor-local.js                   servidor estático para revisar la página en el
+                                     computador imitando a Netlify (rutas SPA).
+                                     `node servidor-local.js` → localhost:4173
 vista-previa.html                   archivo único autocontenido con datos de ejemplo
                                      y toda la red simulada, para ver el diseño en el
                                      celular sin necesitar Supabase configurado
@@ -252,8 +255,16 @@ En Netlify usa rutas normales.
 
 ## 5. Qué falta (a propósito, no por descuido)
 
-- Avisos por notificación push (el correo por Resend es un complemento opcional, no
-  reemplaza la revelación instantánea de contacto que ya es el mecanismo principal).
+- **No existe ningún aviso que salga de la página.** Ni push, ni SMS, ni WhatsApp
+  automático, ni correo funcionando hoy. Conviene tenerlo claro porque es fácil creer lo
+  contrario: `supabase/functions/notificar/index.ts` está escrita pero **no está conectada
+  a nada** — no hay disparador en el esquema, ningún `webhook`, y `app.js` nunca la llama.
+  Para que enviara correos habría que desplegarla, crear un Database Webhook sobre
+  `insert` en `pistas`, y configurar `RESEND_API_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
+  Lo que sí existe y funciona: la revelación instantánea del contacto (el mecanismo
+  principal), el aviso "¿Ya apareció?" en la portada y el contador de novedades en "Mis
+  publicaciones" — los tres **solo aparecen cuando la persona vuelve a abrir la página**,
+  porque viven en `localStorage`, no en un servidor que avise.
 - Mapa con todos los reportes visibles a la vez (los datos de lat/lng ya existen en la
   base, solo falta la vista).
 - Cuentas para instituciones (albergues, veterinarias) que necesiten publicar y

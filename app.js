@@ -58,8 +58,14 @@ function fechaLarga(f) {
   return `${d.getDate()} de ${MESES[d.getMonth()]}`;
 }
 
+/* Cuenta días de CALENDARIO, no horas transcurridas. Antes se restaba
+   Date.now() contra el mediodía de la fecha: si alguien miraba la página a las
+   9 de la mañana, una mascota perdida ayer decía "hoy" y una de anteayer decía
+   "ayer". Aquí las fechas son información crítica, no adorno. */
 function haceCuanto(f) {
-  const dias = Math.floor((Date.now() - new Date(f + "T12:00:00").getTime()) / 86400000);
+  const d = new Date(f + "T12:00:00");
+  const hoyMediodia = new Date(); hoyMediodia.setHours(12, 0, 0, 0);
+  const dias = Math.round((hoyMediodia - d) / 86400000);   // redondeo: absorbe el cambio de hora
   if (dias <= 0) return "hoy";
   if (dias === 1) return "ayer";
   if (dias < 30) return `hace ${dias} días`;
@@ -666,8 +672,12 @@ const rejilla = (filas, extras = {}) =>
 
 function filaCoincidencia(c) {
   const b = banda(c.total);
+  const foto = fotoPrincipal(c);
   return `<a class="coincidencia" href="/m/${c.codigo}" data-ruta>
-    <img src="${esc(fotoPrincipal(c))}" alt="" loading="lazy">
+    ${/* Sin la condición, una ficha sin foto generaba <img src=""> y el
+          navegador volvía a pedir la página entera y mostraba el ícono roto. */""}
+    ${foto ? `<img src="${esc(foto)}" alt="" loading="lazy">`
+           : `<span class="coincidencia__sinfoto" aria-hidden="true">🐾</span>`}
     <div class="coincidencia__texto">
       <b>${esc(nombreMostrado(c))}</b>
       <span>${esc([c.tamano, (c.colores || []).map(colorNombre).join(" y ")].filter(Boolean).join(" · "))}</span>
@@ -963,14 +973,34 @@ function vistaReportar(tipo) {
     if ($("#trampa").value) return;                       // relleno automático: lo ignoramos
     if (Date.now() - inicio < 2500) return brindis("Un momento, se está preparando el formulario.");
 
+    /* Cuando falta algo no basta con el mensajito de abajo: este formulario mide
+       varias pantallas y la persona no sabe a dónde volver. Llevamos la pantalla
+       al campo, lo resaltamos y ahí sí avisamos. */
+    const falta = (selector, mensaje) => {
+      const nodo = $(selector);
+      if (nodo) {
+        const caja = nodo.closest(".campo, .bloque, .fotos") || nodo;
+        caja.classList.add("campo--falta");
+        setTimeout(() => caja.classList.remove("campo--falta"), 2600);
+        nodo.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (nodo.focus && nodo.tagName !== "DIV") setTimeout(() => nodo.focus({ preventScroll: true }), 350);
+      }
+      brindis(mensaje, 4200);
+      return true;
+    };
+
     const especie = leerRadio("especie");
     const tel = $("#ctel").value.trim();
-    if (!estadoFotos.fotos.length) return brindis("Falta la foto. Sin foto casi nadie lo reconoce.");
-    if (!especie) return brindis("Dinos qué animal es.");
-    if (!tel) return brindis("Falta tu WhatsApp: es como te avisan.");
-    if (!telValido(tel)) { $("#ctel").focus(); return brindis("Revisa el número de teléfono."); }
+    if (!estadoFotos.fotos.length)
+      return falta("#f-zona", "Falta la foto. Sin foto casi nadie lo reconoce.");
+    if (!especie)
+      return falta("#form .opciones", "Dinos qué animal es.");
     if (ubi.lat == null && !ubi.municipio)
-      return brindis("Falta la ubicación: elige al menos el municipio.");
+      return falta("#u-dep", "Falta la ubicación: marca el punto en el mapa o elige al menos el municipio.");
+    if (!tel)
+      return falta("#ctel", "Falta tu WhatsApp: es por donde te avisan.");
+    if (!telValido(tel))
+      return falta("#ctel", "Revisa el número: un celular colombiano tiene 10 dígitos y empieza por 3.");
 
     btn.disabled = true; btn.textContent = "Publicando…";
     try {
@@ -1978,7 +2008,9 @@ function enrutar() {
   if (p.startsWith("/editar/")) return vistaEditar(decodeURIComponent(p.slice(8)));
   if (p.startsWith("/afiche/")) return vistaAfiche(decodeURIComponent(p.slice(8)));
 
-  main.innerHTML = `<div class="vacio"><b>Esta página no existe</b>
+  main.innerHTML = `<div class="vacio">
+    <h1 style="font:inherit;margin:0 0 5px"><b>Esta página no existe</b></h1>
+    Puede que el enlace esté incompleto o que la publicación se haya retirado.
     <p style="margin-top:12px"><a href="/" data-ruta class="enlace-fuerte">Volver al inicio →</a></p></div>`;
 }
 
