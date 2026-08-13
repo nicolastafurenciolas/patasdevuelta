@@ -1,0 +1,15 @@
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+
+# Variables de entorno y secretos (NUNCA subir claves service_role o de Resend)
+.env
+.env.local
+.env.*.local
+
+# Dependencias (si en algún momento se usa npm para algo puntual)
+node_modules/
