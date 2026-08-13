@@ -349,8 +349,18 @@ En Netlify usa rutas normales.
 
 ## 5. Qué falta (a propósito, no por descuido)
 
-- **No existe ningún aviso que salga de la página.** Ni push, ni SMS, ni WhatsApp
-  automático, ni correo funcionando hoy. Conviene tenerlo claro porque es fácil creer lo
+- **Los avisos push ya están escritos, pero hay que conectarlos una vez.** El paso a paso
+  está en `AVISOS-PUSH.md`: ejecutar el esquema, generar las llaves VAPID, desplegar la
+  función `avisar` y ponerle los secretos. Mientras no se haga, el botón de avisos
+  simplemente no funciona y **nada más se rompe** — todo lo demás sigue igual.
+  Piezas: `sw.js` (raíz, obligatorio), `manifest.json`, el objeto `AVISOS` en `app.js`,
+  `supabase/functions/avisar/index.ts`, y las tablas `suscripciones_push` y
+  `avisos_enviados`. El aviso lo dispara el navegador de quien publica un hallazgo, y el
+  servidor comprueba antes de enviar: token válido, publicación de menos de 30 minutos,
+  destinatarios del tipo contrario y a menos de 60 km, máximo 5, y nunca dos veces a la
+  misma pareja. **No quites esas comprobaciones**: sin ellas esto sirve para molestar
+  desconocidos.
+- **No hay avisos por SMS ni WhatsApp automático**, y el correo tampoco funciona hoy. Conviene tenerlo claro porque es fácil creer lo
   contrario: `supabase/functions/notificar/index.ts` está escrita pero **no está conectada
   a nada** — no hay disparador en el esquema, ningún `webhook`, y `app.js` nunca la llama.
   Para que enviara correos habría que desplegarla, crear un Database Webhook sobre
