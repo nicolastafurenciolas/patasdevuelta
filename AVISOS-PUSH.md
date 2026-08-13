@@ -58,6 +58,20 @@ avisar
 
 Pega dentro el contenido de `supabase/functions/avisar/index.ts` y despliégala.
 
+> **Trampa conocida del panel web de Supabase.** A veces, al crear la función
+> desde ahí, Supabase le asigna una **ruta al azar** (algo como
+> `clever-action`) en lugar de usar el nombre que escribiste — el nombre que
+> ves después en *Function Configuration* es solo una etiqueta para humanos,
+> no decide la URL real. **Antes de seguir al paso 4, entra a la función y
+> copia la URL exacta que Supabase muestra junto al ícono de enlace.**
+>
+> Si termina en `.../functions/v1/avisar`, no hace falta nada más.
+>
+> Si termina en otra cosa (por ejemplo `.../functions/v1/clever-action`), esa
+> es la URL real de tu función y hay que decírselo al código: en `app.js` busca
+> la constante `RUTA_FUNCION_AVISOS` (cerca de la línea 155) y cambia el valor
+> `"clever-action"` por el nombre exacto que te haya tocado a ti.
+
 Después, en **Edge Functions → Secrets** (o *Manage secrets*), agrega:
 
 | Nombre | Valor |
@@ -76,11 +90,13 @@ los agregues a mano.
 
 ## Paso 4 — Comprobar que responde
 
-Abre esta dirección en el navegador, reemplazando `TU-PROYECTO` y `TU-CLAVE-ANON`
-(la clave anónima es la que está en `config.js`, es pública):
+Abre esta dirección en el navegador, reemplazando `TU-PROYECTO` por el nombre de
+tu proyecto, `NOMBRE-DE-LA-FUNCION` por lo que hayas confirmado en el paso 3
+(`avisar` o la ruta al azar que te haya tocado), y `TU-CLAVE-ANON` por la clave
+anónima que está en `config.js` (es pública):
 
 ```
-https://TU-PROYECTO.supabase.co/functions/v1/avisar?apikey=TU-CLAVE-ANON
+https://TU-PROYECTO.supabase.co/functions/v1/NOMBRE-DE-LA-FUNCION?apikey=TU-CLAVE-ANON
 ```
 
 Debe responder algo así:

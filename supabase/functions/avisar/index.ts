@@ -26,7 +26,11 @@
    Configuración: ver el README, sección "Avisos push".
    ============================================================ */
 
-import * as webpush from "jsr:@negrel/webpush@0.4";
+/* Fijada en 0.5.0 exacto, no "@0.5": exportApplicationServerKey() no existía
+   en 0.4.0 (se agregó en 0.5.0), y esta librería en particular avisa en su
+   propia documentación que aún no la revisó nadie experto en criptografía —
+   así que las versiones se suben a mano, revisando qué cambió, nunca solas. */
+import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
