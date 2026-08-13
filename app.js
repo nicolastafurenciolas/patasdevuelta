@@ -408,6 +408,32 @@ function parecidoPaleta(A = [], B = []) {
    evidencia. Al final aplicamos penalizaciones por contradicciones directas.
 
    Es simétrico: puntuar(a,b) === puntuar(b,a). */
+/* Compara textos escritos a mano: ignora mayúsculas, espacios sobrantes y
+   tildes. Sin esto "Pastor Alemán" y "pastor aleman" contaban como razas
+   distintas, y la mitad de la gente escribe sin tildes en el celular. */
+const normalizarTexto = s => String(s || "").trim().toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/* El collar es el dato más identificador que un desconocido SÍ puede ver:
+   "azul con placa" es casi una identificación única. Se compara por palabras
+   sueltas porque nadie lo describe igual ("collar rojo" vs "rojo con placa").
+
+   Regla clave: si solo UNO de los dos menciona collar, esto no cuenta como
+   señal y no castiga. Los collares se caen, o quien recoge al animal se lo
+   quita antes de reportarlo — penalizarlo perdería reencuentros reales. */
+const PALABRAS_VACIAS_COLLAR = new Set(["collar", "con", "sin", "de", "del", "la",
+  "el", "los", "las", "un", "una", "unos", "unas", "que", "por", "para", "creo",
+  "tenia", "llevaba", "puesto", "puesta", "color", "algo", "como", "pero"]);
+
+function parecidoCollar(a, b) {
+  const palabras = s => new Set(normalizarTexto(s).split(/[^a-z0-9]+/)
+    .filter(p => p.length > 2 && !PALABRAS_VACIAS_COLLAR.has(p)));
+  const A = palabras(a), B = palabras(b);
+  if (!A.size || !B.size) return null;      // uno escribió solo relleno: no hay señal
+  for (const p of A) if (B.has(p)) return 1;
+  return 0.35;   // ambos vieron collar pero lo describen distinto: sigue siendo indicio
+}
+
 function puntuar(base, cand) {
   // Especie: filtro duro, salvo que alguno se haya reportado como "Otro"
   if (base.especie !== cand.especie &&
@@ -423,14 +449,27 @@ function puntuar(base, cand) {
 
   const razones = [];
   const senales = [];              // [peso, valor 0..1]
-  let castigo = 1;
+
+  /* Los castigos NO se multiplican entre sí: se aplica solo el más fuerte.
+     Cada contradicción ya baja el promedio por su cuenta al meter una señal
+     en 0, así que multiplicar además los castigos cobraba dos veces el mismo
+     error y los acumulaba. Un reporte llenado de afán con tres campos
+     equivocados, pero con el animal encontrado en el mismo punto y el mismo
+     día, caía a 20 puntos y desaparecía de la lista — justo el caso que el
+     producto tiene que tolerar. */
+  const castigos = [];
 
   // --- Geografía: el radio se abre con los días, porque los animales caminan
   const km = distanciaKm(base.lat, base.lng, cand.lat, cand.lng);
   const radio = Math.min(3 + Math.max(0, diasEntre) * 1.5, 25);
 
   if (km != null) {
-    if (km > radio * 2.5) return { total: 0 };
+    /* Tope duro alineado con el recuadro de 60 km que ya usa la consulta.
+       Pasado el radio la señal de cercanía vale 0 de todos modos, así que un
+       candidato lejano solo puntúa alto si TODO lo demás coincide — que es
+       exactamente cuando hay que mostrarlo (a un animal lo pueden mover en
+       carro decenas de kilómetros, y en un desastre eso es lo normal). */
+    if (km > Math.max(radio * 2.5, 60)) return { total: 0 };
     senales.push([40, Math.max(0, 1 - km / radio)]);
     razones.push(distanciaTexto(km) + " de distancia");
   } else if (base.municipio && cand.municipio && base.municipio === cand.municipio) {
@@ -439,7 +478,7 @@ function puntuar(base, cand) {
   } else {
     // sin ninguna prueba de cercanía la coincidencia es mucho más débil
     senales.push([40, base.departamento && base.departamento === cand.departamento ? 0.12 : 0]);
-    castigo *= 0.75;
+    castigos.push(0.75);
   }
 
   // --- Tamaño: mucha gente lo estima mal, así que un escalón casi no castiga
@@ -448,7 +487,7 @@ function puntuar(base, cand) {
     const d = Math.abs(ta - tb);
     senales.push([18, d === 0 ? 1 : d === 1 ? 0.45 : 0]);
     if (d === 0) razones.push("mismo tamaño");
-    if (d === 2) castigo *= 0.65;
+    if (d === 2) castigos.push(0.65);
   }
 
   // --- Color
@@ -457,7 +496,7 @@ function puntuar(base, cand) {
     senales.push([26, col]);
     if (col >= 0.85) razones.push("colores iguales");
     else if (col >= 0.45) razones.push("colores parecidos");
-    if (col < 0.15) castigo *= 0.6;
+    if (col < 0.15) castigos.push(0.6);
   }
 
   // --- Detalles
@@ -465,16 +504,24 @@ function puntuar(base, cand) {
   if (base.sexo && cand.sexo && base.sexo !== "No sé" && cand.sexo !== "No sé") {
     const igual = base.sexo === cand.sexo;
     senales.push([8, igual ? 1 : 0]);
-    if (!igual) castigo *= 0.7;
+    if (!igual) castigos.push(0.7);
   }
   if (base.raza && cand.raza) {
-    const igual = base.raza.trim().toLowerCase() === cand.raza.trim().toLowerCase();
+    const igual = normalizarTexto(base.raza) === normalizarTexto(cand.raza);
     senales.push([10, igual ? 1 : 0.3]);
     if (igual) razones.push("misma raza");
+  }
+  if (base.collar && cand.collar) {
+    const c = parecidoCollar(base.collar, cand.collar);
+    if (c != null) {
+      senales.push([14, c]);
+      if (c === 1) razones.push("collar parecido");
+    }
   }
 
   const peso = senales.reduce((a, [w]) => a + w, 0);
   const suma = senales.reduce((a, [w, v]) => a + w * v, 0);
+  const castigo = castigos.length ? Math.min(...castigos) : 1;
   const total = Math.round(Math.max(0, Math.min(100, (suma / peso) * 100 * castigo)));
 
   return { total, razones, km, dias: diasEntre };
@@ -486,7 +533,12 @@ const banda = n => n >= 72 ? { k: "alta", t: "Muy parecido" }
 
 /* Trae candidatos del lado contrario. Filtra en el servidor por especie, tipo y
    recuadro geográfico para que funcione con el país entero cargado. */
-async function buscarCoincidencias(m, { minimo = 26, tope = 12 } = {}) {
+/* El tope es 24, no 12. En una ciudad con muchos reportes activos la pareja
+   verdadera puede quedar en el puesto 14 o 20 cuando quien la encontró llenó
+   el formulario de afán: el puntaje alcanzaba, pero el corte la dejaba fuera.
+   Medido en pruebas/adversario.test.js. Mostrar doce fichas más cuesta un
+   scroll; perder la buena significa una mascota que no vuelve. */
+async function buscarCoincidencias(m, { minimo = 26, tope = 24 } = {}) {
   const contrario = m.tipo === "perdida" ? "encontrada" : "perdida";
   const partes = [
     `tipo=eq.${contrario}`,
@@ -790,6 +842,18 @@ function vistaReportar(tipo) {
         </div>
 
         <div class="campo">
+          <span class="campo__etiqueta">Pelo</span>
+          ${grupoOpciones("pelo", PELOS)}
+        </div>
+
+        <div class="campo">
+          <label class="campo__etiqueta" for="collar">¿Llevaba collar?</label>
+          <span class="campo__ayuda">Si tiene, describe el color y si lleva placa. Es de las cosas
+            que mejor identifican a un animal, y se ve de una.</span>
+          <input type="text" id="collar" maxlength="80" placeholder="Ej: collar azul con placa">
+        </div>
+
+        <div class="campo">
           <label class="campo__etiqueta" for="rasgos">Señas que se noten a simple vista</label>
           <span class="campo__ayuda">Una mancha, una oreja caída, que cojea, que le falta la cola.
             Esto es lo que hace que alguien lo reconozca en la calle.</span>
@@ -797,28 +861,28 @@ function vistaReportar(tipo) {
         </div>
       </fieldset>
 
+      ${/* Lo que sigue son datos que quien encuentra al animal muchas veces NO
+            puede saber (el sexo no se ve sin revisarlo, la raza se adivina mal).
+            Van aparte y con el rótulo diciendo la verdad: en blanco es MEJOR que
+            adivinado. Medido en pruebas/adversario.test.js — un campo vacío casi
+            no baja el puntaje, uno equivocado lo hunde hasta 53 puntos. */""}
       <details class="mas">
-        <summary>Más detalles (opcional, pero mejoran el cruce)</summary>
+        <summary>Si alcanzaste a fijarte (déjalo en blanco si no estás seguro)</summary>
         <div class="mas__cuerpo">
+          <p class="campo__ayuda">En serio: dejar algo vacío no estorba. Poner un dato equivocado
+            sí puede alejar a la mascota de su familia.</p>
           <div class="campo">
             <label class="campo__etiqueta" for="raza">Raza o mezcla</label>
             <input type="text" id="raza" maxlength="40" placeholder="Ej: criollo, labrador, siamés">
           </div>
           <div class="campo">
-            <span class="campo__etiqueta">Pelo</span>
-            ${grupoOpciones("pelo", PELOS)}
-          </div>
-          <div class="campo">
             <span class="campo__etiqueta">Sexo</span>
+            <span class="campo__ayuda">Si no lo revisaste, "No sé" es la respuesta correcta.</span>
             ${grupoOpciones("sexo", SEXOS)}
           </div>
           <div class="campo">
             <span class="campo__etiqueta">Edad aproximada</span>
             ${grupoOpciones("edad", EDADES)}
-          </div>
-          <div class="campo">
-            <label class="campo__etiqueta" for="collar">¿Llevaba collar?</label>
-            <input type="text" id="collar" maxlength="80" placeholder="Ej: collar azul con placa">
           </div>
           ${perdida ? `
           <div class="campo">
