@@ -205,6 +205,28 @@ y 150 fichas rivales). Si tocas `puntuar()`, corre las dos. `pruebas/algoritmo.j
 una copia ejecutable de la función y un `verificarSincronia()` que avisa si esa copia se
 desincroniza de `app.js`.
 
+### La búsqueda se amplía sola cuando no hay nada cerca
+`buscarCoincidencias()` intenta en tres alcances, de más acotado a más amplio, y **se
+detiene en el primero que dé resultados**: recuadro de ~60 km → departamento → todo el
+país. Solo se paga la consulta extra cuando la barata no dio nada, así que en ciudades
+con actividad no cambia nada.
+
+Existe porque pasó de verdad: la ficha `XU6EV` en Yotoco (Valle) mostraba **cero**
+coincidencias, no porque no hubiera un perro parecido, sino porque el más cercano
+estaba a 102 km y el recuadro solo miraba 60. Al ampliar, apareció una coincidencia
+legítima en Cartago. Es seguro porque `puntuar()` ya no anula por distancia: un
+candidato lejano solo alcanza el umbral si TODO lo demás coincide.
+
+La lista que devuelve lleva una propiedad `alcance` (`"cerca"`, `"departamento"` o
+`"pais"`), y la interfaz avisa cuando lo que se está viendo viene de lejos
+(`avisoAlcanceLejano`) — porque una coincidencia a 100 km se lee distinto que una a
+2 km, y esconderlo sería engañoso.
+
+**Cuando no hay ninguna coincidencia, hay que decirlo.** Antes la sección desaparecía
+entera y no había forma de saber si el cruce funcionó y no encontró, o si algo se
+rompió. Es el mismo error que ya se había cometido con el bloque de avisos push. Si
+agregas otra vista que muestre coincidencias, píntale también su estado vacío.
+
 ### La lista de coincidencias no tiene tope, y carga por tandas al hacer scroll
 `buscarCoincidencias()` ya no recorta a un top fijo (antes 24): devuelve TODO lo que pase
 el umbral de 26 puntos, ordenado de más a menos parecido. Se probó y pasaba de verdad:

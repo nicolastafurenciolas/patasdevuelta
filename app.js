@@ -928,57 +928,81 @@ async function buscarPosibleDuplicado(datos) {
   } catch { return null; }   // si falla la consulta, no bloqueamos la publicación por esto
 }
 
-/* Trae candidatos del lado contrario. Filtra en el servidor por especie, tipo y
-   recuadro geográfico para que funcione con el país entero cargado. */
-/* El tope es 24, no 12. En una ciudad con muchos reportes activos la pareja
-   verdadera puede quedar en el puesto 14 o 20 cuando quien la encontró llenó
-   el formulario de afán: el puntaje alcanzaba, pero el corte la dejaba fuera.
-   Medido en pruebas/adversario.test.js. Mostrar doce fichas más cuesta un
-   scroll; perder la buena significa una mascota que no vuelve. */
-/* Ya NO recorta a un top fijo. Antes tope=24 significaba que una coincidencia
-   real, con puntaje suficiente, podía quedar oculta para siempre si otras 24
-   fichas puntuaban apenas un poco más — eso se probó y pasaba de verdad (ver
-   pruebas/adversario.test.js). Ahora devuelve TODO lo que pase el umbral,
-   ordenado de más a menos parecido, y quien llama decide cuánto mostrar de
-   una vez: la interfaz las va cargando por tandas a medida que se hace
-   scroll (pintarCoincidenciasPaginadas, más abajo), en vez de esconder el
-   resto. `tope` se deja como opción para quien de verdad necesite un límite
-   (por ejemplo la función de avisos push, que solo usa las primeras). */
+/* Trae candidatos del lado contrario y los puntúa.
+
+   NO recorta a un top fijo (antes eran 24): devuelve TODO lo que pase el
+   umbral, ordenado de más a menos parecido, y la interfaz los va cargando por
+   tandas al hacer scroll (pintarCoincidenciasPaginadas). Con un tope fijo, una
+   coincidencia real podía quedar oculta para siempre si otras 24 puntuaban
+   apenas un poco más — medido en pruebas/adversario.test.js. `tope` se deja
+   como opción para quien sí necesite un límite (los avisos push, que solo usan
+   las primeras).
+
+   LA BÚSQUEDA SE AMPLÍA SOLA SI NO ENCUENTRA NADA CERCA. Primero mira dentro
+   de ~60 km, que es lo normal y lo barato. Pero en un municipio pequeño puede
+   no haber NINGÚN reporte del lado contrario en ese radio, y entonces la
+   persona veía cero coincidencias — no porque no exista su mascota, sino
+   porque nadie más ha publicado cerca. Esto pasó de verdad: una ficha en
+   Yotoco (Valle) tenía el reporte más cercano a 102 km y no mostraba nada.
+
+   Por eso, si el recuadro cercano no deja nada, se busca en el departamento y
+   luego en todo el país. Es seguro porque puntuar() ya no anula por distancia:
+   un candidato lejano solo alcanza el umbral si TODO lo demás coincide, que es
+   justo cuando hay que mostrarlo. Y solo se paga esa consulta extra cuando la
+   barata no dio nada, así que en ciudades con actividad no cambia nada. */
 async function buscarCoincidencias(m, { minimo = 26, tope = Infinity } = {}) {
   const contrario = m.tipo === "perdida" ? "encontrada" : "perdida";
-  const partes = [
+  const base = [
     `tipo=eq.${contrario}`,
     `estado=neq.resuelto`,      // las caducadas SIGUEN buscándose: excluirlas perdería reencuentros
-    `especie=in.(${encodeURIComponent(m.especie)},Otro)`,
-    `order=fecha.desc`, `limit=800`
+    `especie=in.(${encodeURIComponent(m.especie)},Otro)`
   ];
 
-  if (m.lat != null && m.lng != null) {
-    const grados = 60 / 111;    // ~60 km alrededor: cubre el radio máximo con margen
-    partes.push(`lat=gte.${(m.lat - grados).toFixed(4)}`, `lat=lte.${(m.lat + grados).toFixed(4)}`,
-      `lng=gte.${(m.lng - grados).toFixed(4)}`, `lng=lte.${(m.lng + grados).toFixed(4)}`);
-  } else if (m.departamento) {
-    partes.push(`departamento=eq.${encodeURIComponent(m.departamento)}`);
-  }
-
-  let filas = await rest(`mascotas_publicas?${partes.join("&")}`);
-
-  /* Si el reporte tiene coordenadas, el recuadro deja fuera a quien publicó sin
-     marcar el mapa. Los recuperamos por municipio para no perder coincidencias. */
-  if (m.lat != null && m.municipio) {
-    try {
-      const sinPunto = await rest(`mascotas_publicas?tipo=eq.${contrario}&estado=neq.resuelto` +
-        `&municipio=eq.${encodeURIComponent(m.municipio)}&lat=is.null&limit=200`);
-      const vistos = new Set(filas.map(f => f.id));
-      filas = filas.concat(sinPunto.filter(f => !vistos.has(f.id)));
-    } catch { }
-  }
-
-  return filas
+  const puntuarFilas = filas => filas
     .map(c => ({ ...c, ...puntuar(m, c) }))
     .filter(c => c.total >= minimo)
-    .sort((a, b) => b.total - a.total)
-    .slice(0, tope);
+    .sort((a, b) => b.total - a.total);
+
+  // De lo más acotado a lo más amplio. Se para en cuanto una tanda da resultados.
+  const intentos = [];
+  if (m.lat != null && m.lng != null) {
+    const grados = 60 / 111;    // ~60 km alrededor: cubre el radio máximo con margen
+    intentos.push({ alcance: "cerca", partes: [...base, `order=fecha.desc`, `limit=800`,
+      `lat=gte.${(m.lat - grados).toFixed(4)}`, `lat=lte.${(m.lat + grados).toFixed(4)}`,
+      `lng=gte.${(m.lng - grados).toFixed(4)}`, `lng=lte.${(m.lng + grados).toFixed(4)}`] });
+  }
+  if (m.departamento) {
+    intentos.push({ alcance: "departamento", partes: [...base, `order=fecha.desc`, `limit=800`,
+      `departamento=eq.${encodeURIComponent(m.departamento)}`] });
+  }
+  intentos.push({ alcance: "pais", partes: [...base, `order=fecha.desc`, `limit=600`] });
+
+  let resultado = [], alcanceUsado = "cerca";
+  for (const intento of intentos) {
+    let filas;
+    try { filas = await rest(`mascotas_publicas?${intento.partes.join("&")}`); }
+    catch { continue; }
+
+    /* El recuadro geográfico deja fuera a quien publicó sin marcar el mapa
+       (lat nula). Los recuperamos por municipio para no perderlos. */
+    if (intento.alcance === "cerca" && m.municipio) {
+      try {
+        const sinPunto = await rest(`mascotas_publicas?tipo=eq.${contrario}&estado=neq.resuelto` +
+          `&municipio=eq.${encodeURIComponent(m.municipio)}&lat=is.null&limit=200`);
+        const vistos = new Set(filas.map(f => f.id));
+        filas = filas.concat(sinPunto.filter(f => !vistos.has(f.id)));
+      } catch { }
+    }
+
+    const puntuadas = puntuarFilas(filas);
+    if (puntuadas.length) { resultado = puntuadas; alcanceUsado = intento.alcance; break; }
+  }
+
+  const lista = resultado.slice(0, tope);
+  /* Se marca en la lista de dónde salió, para poder avisarle a la persona que
+     lo que está viendo viene de lejos y por eso puede ser menos probable. */
+  lista.alcance = alcanceUsado;
+  return lista;
 }
 
 /* ---------- COINCIDENCIAS YA VISTAS ----------
@@ -1819,17 +1843,41 @@ async function vistaFicha(codigo) {
 
   // coincidencias del lado contrario
   if (!resuelto) {
+    const caja = $("#coincidencias");
     buscarCoincidencias(m).then(cs => {
-      if (!cs.length) return;
-      const caja = $("#coincidencias");
+      /* Cuando no hay nada, ANTES no se pintaba nada: la sección desaparecía
+         entera y no quedaba forma de saber si el cruce funcionó y no encontró,
+         o si algo se rompió. Ahora siempre se dice qué pasó. */
+      if (!cs.length) {
+        caja.innerHTML = `
+          <h2 class="seccion__titulo">Posibles coincidencias</h2>
+          <div class="vacio"><b>Todavía no hay ninguna parecida</b>
+            Nadie ha reportado ${perdida ? "un hallazgo" : "una búsqueda"} que se parezca a esta ficha.
+            Seguimos cruzando: apenas alguien publique algo compatible, aparece aquí solo.</div>`;
+        return;
+      }
       caja.innerHTML = `
         <h2 class="seccion__titulo">Posibles coincidencias (${cs.length})</h2>
-        <p class="parrafo">${perdida ? "Mascotas encontradas" : "Mascotas que están buscando"} cerca
-          y con características parecidas, de la más probable a la menos probable. Míralas: nosotros
-          solo ordenamos la lista, quien decide eres tú.</p>`;
+        <p class="parrafo">${perdida ? "Mascotas encontradas" : "Mascotas que están buscando"}
+          con características parecidas, de la más probable a la menos probable. Míralas: nosotros
+          solo ordenamos la lista, quien decide eres tú.</p>
+        ${avisoAlcanceLejano(cs.alcance)}`;
       pintarCoincidenciasPaginadas(caja, cs);
     }).catch(() => { });
   }
+}
+
+/* Cuando la búsqueda tuvo que ampliarse más allá de la zona cercana, conviene
+   decirlo: lo que se está mostrando puede coincidir en todo salvo en que está
+   lejos, y eso cambia cómo hay que leerlo. */
+function avisoAlcanceLejano(alcance) {
+  if (alcance === "departamento") return `<div class="aviso">No había reportes parecidos
+    en la zona, así que ampliamos la búsqueda <strong>a todo el departamento</strong>.
+    Coinciden en características, pero están más lejos.</div>`;
+  if (alcance === "pais") return `<div class="aviso">No había reportes parecidos en la zona
+    ni en el departamento, así que buscamos <strong>en todo el país</strong>. Coinciden en
+    características, pero están lejos: míralas con más calma antes de escribir.</div>`;
+  return "";
 }
 
 /* Flujo de contacto: es el momento más importante de toda la página. */
@@ -2298,7 +2346,16 @@ async function vistaGestionar(token, params) {
 
   if (!resuelto) {
     buscarCoincidencias(m).then(cs => {
-      if (!cs.length) return;
+      // Igual que en la ficha pública: si no hay nada, decirlo en vez de
+      // dejar el hueco en blanco (ver el comentario allá).
+      if (!cs.length) {
+        $("#coincidencias2").innerHTML = `
+          <h2 class="seccion__titulo">Posibles coincidencias</h2>
+          <div class="vacio"><b>Todavía no hay ninguna parecida</b>
+            Seguimos cruzando tu publicación contra cada reporte nuevo.
+            Apenas alguien publique algo compatible, aparece aquí.</div>`;
+        return;
+      }
 
       /* Si acaba de publicar un hallazgo y hay una coincidencia muy fuerte, no
          sirve solo listarla: quien tiene al animal en las manos es esta persona,
@@ -2352,8 +2409,9 @@ async function vistaGestionar(token, params) {
       const caja2 = $("#coincidencias2");
       caja2.innerHTML = empujon + aviso +
         `<h2 class="seccion__titulo">Revisa estas ${cs.length}</h2>
-        <p class="parrafo">Coinciden en zona y características, de la más probable a la menos
-          probable. Míralas una por una: toma tres segundos.</p>`;
+        <p class="parrafo">Coinciden en características, de la más probable a la menos
+          probable. Míralas una por una: toma tres segundos.</p>
+        ${avisoAlcanceLejano(cs.alcance)}`;
       pintarCoincidenciasPaginadas(caja2, cs, c =>
         idsNuevas.has(c.codigo) ? "Nueva" : idsSubieron.has(c.codigo) ? "Se parece más" : "");
 
