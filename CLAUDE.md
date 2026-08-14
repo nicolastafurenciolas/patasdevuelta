@@ -168,13 +168,80 @@ otro, y **a propósito también los colores y los tamaños**: esos ya tienen su 
 señal y contarlos aquí sería cobrarlos dos veces. Medido: entre dos mascotas distintas
 que comparten palabras genéricas el puntaje no se mueve (19 → 19).
 
+**No hay tope de distancia.** Existió uno ("más de ~60 km, total 0") y se quitó a
+propósito: un animal con TODAS las demás señales iguales no debe desaparecer solo por
+la distancia — lo pudieron mover en carro. La señal de cercanía ya cae a 0 por su cuenta
+pasado el radio, así que un candidato lejano solo puntúa alto si todo lo demás coincide
+— que es justo cuando hay que mostrarlo. Esto no compara contra el país entero: el
+candidato ya tuvo que pasar el recuadro geográfico de la consulta a Supabase
+(`buscarCoincidencias`, ~60 km) para llegar hasta `puntuar()`. Ese recuadro sigue siendo
+el límite real por ancho de banda.
+
+**Tolerancia a errores de tecleo (`tipeoParecido`), no un diccionario de sinónimos.**
+Se consideró construir un repertorio de sinónimos para el texto libre (collar, señas) y
+se descartó a propósito: sin estructura gramatical, un sinónimo mal puesto genera falsos
+positivos ("pequeña" podría referirse al tamaño general, que ya es su propia señal, y
+contarlo también en las señas sería cobrarlo dos veces). En cambio, `tipeoParecido()`
+mide distancia de edición (Levenshtein) entre dos palabras — cubre errores de tecleo
+reales ("azul"/"asul", por el seseo) sin necesidad de enumerarlos a mano. Se aplica a
+collar, señas y raza. **Los nombres de color NUNCA se comparan por tecleo entre sí**
+("dorado" y "morado" quedan a una letra de distancia y son colores reales distintos,
+no un error de tipeo) — para colores existe el sistema de familias visuales, que sí
+entiende el significado.
+
+**El collar reconoce una confirmación sin detalle** ("sí", "llevaba", "tenía" — un
+vocabulario cerrado de sí/no, no un diccionario general) y le da un crédito débil (0.2)
+si ambos lados confirman que había collar aunque ninguno lo describa. "No tenía" NO
+cuenta como confirmación aunque contenga la palabra "tenía" — hay una lista de negación
+aparte que lo bloquea. También existe una familia de colores *de collar* (`azul`
+`morado` `celeste`...) separada de la paleta de pelaje, porque un collar sí puede ser
+azul o morado y esos colores no existen en `COLORES`.
+
 Hay dos suites de pruebas, ambas en Node puro sin tocar la base de datos:
 `node pruebas/cruce.test.js` (20 casos de mano + simulacro de 90 fichas) y
-`node pruebas/adversario.test.js` (34 parejas que **sí** son la misma mascota, cada una
+`node pruebas/adversario.test.js` (52 parejas que **sí** son la misma mascota, cada una
 degradada de una forma realista, midiendo si alcanzan a salir en pantalla contra 10, 30
 y 150 fichas rivales). Si tocas `puntuar()`, corre las dos. `pruebas/algoritmo.js` tiene
 una copia ejecutable de la función y un `verificarSincronia()` que avisa si esa copia se
 desincroniza de `app.js`.
+
+### La lista de coincidencias no tiene tope, y carga por tandas al hacer scroll
+`buscarCoincidencias()` ya no recorta a un top fijo (antes 24): devuelve TODO lo que pase
+el umbral de 26 puntos, ordenado de más a menos parecido. Se probó y pasaba de verdad:
+una coincidencia real con puntaje suficiente podía quedar oculta para siempre si otras 24
+fichas puntuaban apenas un poco más (ver `pruebas/adversario.test.js`).
+
+La interfaz (`pintarCoincidenciasPaginadas`, usada en la ficha pública y en el panel de
+gestión) pinta 12 de una vez y carga 12 más cada vez que un `IntersectionObserver` ve un
+centinela invisible al final de la lista — así un celular de gama baja nunca tiene que
+pintar de una un DOM de cientos de filas. Si agregas otro lugar que muestre
+coincidencias, usa esta función en vez de volver a recortar con `.slice()`.
+
+### Reportes duplicados del mismo hallazgo
+Cuando varias personas encuentran al mismo animal callejero por separado, cada una
+publicaba su propia ficha — el mismo animal fragmentado en 3 o 4 publicaciones que
+además compiten entre sí por la atención del dueño. Antes de crear una publicación de
+tipo **encontrada** (nunca para "perdida"), `buscarPosibleDuplicado()` revisa si hay un
+reporte muy parecido de los últimos 5 días a menos de 5 km, y si lo hay, ofrece ir a esa
+ficha en vez de publicar una nueva — para que la persona deje su información ahí como
+pista, y el dueño vea todo junto en un solo lugar.
+
+Esto usa `puntuarDuplicado()`, una función **aparte** de `puntuar()`, no una reutilización.
+`puntuar()` asume una pérdida y un hallazgo y decide el orden de las fechas a partir de
+eso ("nadie encuentra antes de perder"); aquí ambos reportes son "encontrada" — no hay
+una fecha que deba ser posterior a la otra, sino dos avistamientos que deberían estar
+cerca en tiempo y espacio. Es un problema distinto, con su propio umbral (60 de 100) y
+sus propios límites duros (más de 5 km o más de 5 días de diferencia, cero).
+
+**Tiene su propio castigo por contradicción de color.** Sin él, dos animales genuinamente
+distintos reportados en el mismo punto el mismo día ya suman un piso de ~56% solo por
+ubicación y fecha, y con un tamaño apenas parecido cruzan el umbral aunque el color sea
+totalmente opuesto (blanco contra negro). Se probó y pasaba de verdad antes de agregar el
+castigo. Si tocas esta función, no le quites esa comprobación.
+
+No tiene una suite de pruebas adversarial como `puntuar()` — se verificó a mano con
+casos representativos (mismo animal, animal distinto con cada señal opuesta, lejos,
+tarde, simetría). Si se vuelve a tocar, vale la pena construirle una igual de rigurosa.
 
 ### Los formularios piden por observabilidad, no por importancia
 Los campos del formulario están agrupados según **lo que quien encontró al animal puede

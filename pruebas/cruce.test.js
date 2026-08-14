@@ -99,10 +99,17 @@ caso("Hallazgo 1 día antes de la pérdida, dentro del margen de error de 2 día
   { especie: "Perro", tipo: "encontrada", fecha: dias(HOY, -1), lat: 4.6, lng: -74.1, tamano: "Mediano" },
   r => r.total > 0);
 
-caso("Muy lejos (200 km): debe filtrarse a 0 aunque todo lo demás coincida perfecto",
+/* Antes este caso exigía total === 0: había un tope duro que anulaba
+   cualquier candidato más allá de ~60 km, sin importar qué tan bien
+   coincidiera todo lo demás. Se quitó a propósito (ver el comentario en
+   puntuar()): un animal con todas las señales iguales no debe desaparecer
+   solo por la distancia — lo pudieron mover en carro. La señal de cercanía
+   sigue cayendo a 0 por su cuenta pasado el radio, así que el puntaje baja
+   mucho igual; lo que cambió es que ya no se ANULA por completo. */
+caso("Muy lejos (200 km) pero todo lo demás coincide: baja mucho, no se anula",
   { especie: "Perro", tipo: "perdida", fecha: HOY, lat: 4.7110, lng: -74.0721, tamano: "Mediano", colores: ["negro"] },
   { especie: "Perro", tipo: "encontrada", fecha: dias(HOY, 1), lat: 6.2442, lng: -75.5812, tamano: "Mediano", colores: ["negro"] },
-  r => r.total === 0);
+  r => r.total > 0 && banda(r.total) !== "alta");
 
 caso("Mismo municipio pero SIN coordenadas en ninguno de los dos: coincidencia débil, no 'alta'",
   { especie: "Gato", tipo: "perdida", fecha: HOY, municipio: "Manizales", departamento: "Caldas", tamano: "Pequeño" },

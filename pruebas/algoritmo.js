@@ -59,6 +59,28 @@ function parecidoPaleta(A = [], B = []) {
 const normalizarTexto = s => String(s || "").trim().toLowerCase()
   .normalize("NFD").replace(/[̀-ͯ]/g, "");
 
+function distanciaEdicion(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 99;
+  const fila = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let arriba = fila[0]; fila[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const diag = arriba;
+      arriba = fila[j];
+      fila[j] = a[i - 1] === b[j - 1] ? diag : 1 + Math.min(diag, arriba, fila[j - 1]);
+    }
+  }
+  return fila[b.length];
+}
+
+function tipeoParecido(a, b) {
+  if (a === b) return true;
+  if (typeof PALABRAS_DE_COLOR !== "undefined" && PALABRAS_DE_COLOR.has(a) && PALABRAS_DE_COLOR.has(b)) return false;
+  const corta = Math.min(a.length, b.length);
+  if (corta < 4) return false;
+  return distanciaEdicion(a, b) <= (corta >= 8 ? 2 : 1);
+}
+
 const PALABRAS_VACIAS_COLLAR = new Set(["collar", "con", "sin", "de", "del", "la",
   "el", "los", "las", "un", "una", "unos", "unas", "que", "por", "para", "creo",
   "tenia", "llevaba", "puesto", "puesta", "color", "algo", "como", "pero"]);
@@ -104,22 +126,66 @@ function palabrasDeRasgos(texto) {
     .filter(p => p.length > 3 && !PALABRAS_VACIAS_RASGOS.has(p)));
 }
 
+function contarComunes(A, B) {
+  let comunes = 0;
+  for (const p of A) for (const q of B) if (tipeoParecido(p, q)) { comunes++; break; }
+  return comunes;
+}
+
 function parecidoRasgos(a, b) {
   const A = palabrasDeRasgos(a), B = palabrasDeRasgos(b);
   if (!A.size || !B.size) return null;
-  let comunes = 0;
-  for (const p of A) if (B.has(p)) comunes++;
+  const comunes = contarComunes(A, B);
   if (comunes === 0) return null;   // sin nada en común la señal no participa
   return comunes >= 2 ? 1 : 0.7;    // una palabra es indicio; dos o más ya es mucha casualidad
 }
 
-function parecidoCollar(a, b) {
-  const palabras = s => new Set(normalizarTexto(s).split(/[^a-z0-9]+/)
+const PALABRAS_SI_COLLAR = new Set(["si", "llevaba", "llevava", "tenia", "claro",
+  "efectivamente", "obvio", "correcto", "asi", "seguro"]);
+const PALABRAS_NO_COLLAR = new Set(["no", "nunca", "jamas"]);
+
+function indicaCollar(texto) {
+  const palabras = normalizarTexto(texto).split(/[^a-z0-9]+/).filter(Boolean);
+  const si = palabras.some(p => PALABRAS_SI_COLLAR.has(p));
+  const no = palabras.some(p => PALABRAS_NO_COLLAR.has(p));
+  return si && !no;
+}
+
+const FAMILIAS_COLOR_COLLAR = [
+  ["azul", "celeste", "turquesa", "morado", "violeta", "lila", "purpura"],
+  ["rojo", "rosado", "rosa", "fucsia", "vinotinto", "guinda"],
+  ["verde", "oliva", "esmeralda"],
+  ["negro", "gris", "plateado", "plomo"],
+  ["cafe", "marron", "beige", "dorado", "amarillo", "naranja", "mostaza"],
+  ["blanco", "crema", "hueso"]
+];
+const MAPA_FAMILIA_COLLAR = new Map(
+  FAMILIAS_COLOR_COLLAR.flatMap((familia, i) => familia.map(palabra => [palabra, i])));
+
+const PALABRAS_DE_COLOR = new Set([...Object.keys(MAPA_COLOR), ...MAPA_FAMILIA_COLLAR.keys()]);
+
+function palabrasDeCollar(texto) {
+  return new Set(normalizarTexto(texto).split(/[^a-z0-9]+/)
     .filter(p => p.length > 2 && !PALABRAS_VACIAS_COLLAR.has(p)));
-  const A = palabras(a), B = palabras(b);
-  if (!A.size || !B.size) return null;
-  for (const p of A) if (B.has(p)) return 1;
-  return 0.35;
+}
+
+function parecidoCollar(a, b) {
+  const A = palabrasDeCollar(a), B = palabrasDeCollar(b);
+
+  if (A.size && B.size) {
+    for (const p of A) for (const q of B) if (tipeoParecido(p, q)) return 1;
+    for (const p of A) for (const q of B) {
+      const fp = MAPA_FAMILIA_COLLAR.get(p), fq = MAPA_FAMILIA_COLLAR.get(q);
+      if (fp != null && fp === fq) return 0.65;
+    }
+    return 0.35;
+  }
+
+  const confirmaA = A.size > 0 || indicaCollar(a);
+  const confirmaB = B.size > 0 || indicaCollar(b);
+  if (confirmaA && confirmaB) return 0.2;
+
+  return null;
 }
 
 function puntuar(base, cand) {
@@ -141,7 +207,6 @@ function puntuar(base, cand) {
   const radio = Math.min(3 + Math.max(0, diasEntre) * 1.5, 25);
 
   if (km != null) {
-    if (km > Math.max(radio * 2.5, 60)) return { total: 0 };
     senales.push([40, Math.max(0, 1 - km / radio)]);
     razones.push(distanciaTexto(km) + " de distancia");
   } else if (base.municipio && cand.municipio && base.municipio === cand.municipio) {
@@ -182,7 +247,7 @@ function puntuar(base, cand) {
     if (!igual) castigos.push(0.7);
   }
   if (base.raza && cand.raza) {
-    const igual = normalizarTexto(base.raza) === normalizarTexto(cand.raza);
+    const igual = tipeoParecido(normalizarTexto(base.raza), normalizarTexto(cand.raza));
     senales.push([10, igual ? 1 : 0.3]);
     if (igual) razones.push("misma raza");
   }
@@ -260,6 +325,7 @@ const dias = (fecha, n) => {
 
 module.exports = {
   ORDEN_TAMANO, ORDEN_EDAD, COLORES, MAPA_COLOR,
-  distanciaKm, distanciaTexto, parecidoColor, parecidoPaleta, normalizarTexto, parecidoCollar, parecidoRasgos,
+  distanciaKm, distanciaTexto, parecidoColor, parecidoPaleta, normalizarTexto,
+  distanciaEdicion, tipeoParecido, parecidoCollar, parecidoRasgos,
   puntuar, banda, candidatosPara, coincidenciasDe, dias, verificarSincronia
 };
