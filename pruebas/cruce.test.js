@@ -89,10 +89,19 @@ caso("Alguien reportó especie 'Otro': no debe filtrarse aunque el otro diga Per
   { especie: "Perro", tipo: "encontrada", fecha: dias(HOY, 1), lat: 4.6, lng: -74.1, tamano: "Pequeño" },
   r => r.total > 0);
 
-caso("Hallazgo reportado 5 días ANTES de la pérdida (fuera del margen de 2 días): total 0",
-  { especie: "Perro", tipo: "perdida", fecha: HOY, lat: 4.6, lng: -74.1 },
-  { especie: "Perro", tipo: "encontrada", fecha: dias(HOY, -5), lat: 4.6, lng: -74.1 },
-  r => r.total === 0);
+/* Antes esto era un corte duro (total 0). Ya no: quien perdió a su mascota
+   muchas veces no sabe qué día fue (estaba de viaje, la dejó con alguien) y el
+   formulario además propone el día de hoy, así que una pérdida fechada "hoy"
+   contra un hallazgo real de hace días es un caso común, no un imposible. */
+caso("Hallazgo 5 días ANTES de la pérdida: ya no se anula, solo baja un poco",
+  { especie: "Perro", tipo: "perdida", fecha: HOY, lat: 4.6, lng: -74.1, tamano: "Mediano" },
+  { especie: "Perro", tipo: "encontrada", fecha: dias(HOY, -5), lat: 4.6, lng: -74.1, tamano: "Mediano" },
+  r => r.total > 72);
+
+caso("Hallazgo 40 días ANTES de la pérdida: sigue saliendo, pero castigado",
+  { especie: "Perro", tipo: "perdida", fecha: HOY, lat: 4.6, lng: -74.1, tamano: "Mediano" },
+  { especie: "Perro", tipo: "encontrada", fecha: dias(HOY, -40), lat: 4.6, lng: -74.1, tamano: "Mediano" },
+  r => r.total >= 26 && r.total < 72);   // sale, pero nunca en banda "alta"
 
 caso("Hallazgo 1 día antes de la pérdida, dentro del margen de error de 2 días: no debe filtrarse",
   { especie: "Perro", tipo: "perdida", fecha: HOY, lat: 4.6, lng: -74.1, tamano: "Mediano" },

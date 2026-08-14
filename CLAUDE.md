@@ -177,6 +177,35 @@ candidato ya tuvo que pasar el recuadro geográfico de la consulta a Supabase
 (`buscarCoincidencias`, ~60 km) para llegar hasta `puntuar()`. Ese recuadro sigue siendo
 el límite real por ancho de banda.
 
+**Tampoco hay tope de fecha: un hallazgo anterior a la pérdida ya no se anula.**
+Existió el mismo acantilado que en la distancia (`if (diasEntre < -2) return {total:0}`,
+"nadie encuentra a un animal antes de que se pierda"). Se quitó a propósito porque esa
+regla asume algo falso: que quien perdió a su mascota **sabe qué día fue**. Muchas veces
+no — estaba de viaje, la dejó con un familiar, trabaja fuera — y reporta el día en que
+**se enteró**, no el día en que pasó. Peor: el campo de fecha viene relleno con el día de
+hoy, así que quien perdió a su mascota hace una semana y no lo cambia deja "se perdió
+hoy", y cualquier hallazgo de hace más de dos días quedaba **anulado a cero aunque
+coincidiera en absolutamente todo**. Ese es el camino más probable, no el excepcional.
+
+Ahora es una pendiente suave: `anticipo = max(0, -diasEntre - 2)` y un castigo
+`max(0.6, 1 - anticipo/75)`, que entra en el mismo `Math.min` que los demás (no se
+acumula). Es deliberadamente flojo: lo que identifica a un animal son sus
+características, no la fecha. Un candidato idéntico en todo lo demás pero "imposible"
+por fecha baja de banda y se va al final de la lista — no desaparece. El piso de 0.6
+hace que ni el peor desfase pueda dejarlo en banda "alta".
+
+La asimetría es a propósito y no debe volverse simétrica: reportar la pérdida **tarde**
+es común; reportar un hallazgo **antes de que ocurra** es imposible salvo error de
+tecleo. Por eso también el radio geográfico usa `Math.abs(diasEntre)` y no
+`Math.max(0, diasEntre)`: si la fecha está mal puesta, el tiempo real transcurrido es
+desconocido y probablemente grande, y encerrar la búsqueda en el radio mínimo de 3 km
+sería cobrar dos veces el mismo error. Para el caso normal las dos expresiones dan
+exactamente lo mismo. Y el formulario de "perdida" ahora avisa que ante la duda conviene
+poner **la fecha más antigua posible** — atacar la causa, no solo el síntoma.
+
+Medido: la suite adversarial pasó de 79% a 81% (ciudad saturada) y de 92% a 94%
+(municipio mediano), sin mover ningún otro caso ni agregar falsos positivos.
+
 **Tolerancia a errores de tecleo (`tipeoParecido`), no un diccionario de sinónimos.**
 Se consideró construir un repertorio de sinónimos para el texto libre (collar, señas) y
 se descartó a propósito: sin estructura gramatical, un sinónimo mal puesto genera falsos
@@ -408,6 +437,12 @@ pruebas/sembrar-ruido.js            crea publicaciones de mentira en la base REA
 pruebas/borrar-ruido.js             las quita de la página al instante (las pone en
                                      "oculto"). Ocultar no es borrar: para eliminarlas
                                      de la base hay que correr el SQL de arriba.
+pruebas/limpiar-todo.sql            guion completo para dejar la base vacía antes de
+                                     lanzar: mira qué hay, borra fichas (las pistas y
+                                     suscripciones caen solas por cascade), vacía el
+                                     bucket "fotos" y comprueba que todo quedó en 0.
+                                     Tiene un paso alternativo para borrar SOLO el
+                                     ruido si ya hay publicaciones reales.
 construir-vista-previa.js           regenera vista-previa.html copiando styles.css y
                                      app.js dentro. CÓRRELO cuando toques cualquiera
                                      de los dos, o la vista previa muestra un diseño

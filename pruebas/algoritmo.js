@@ -197,14 +197,16 @@ function puntuar(base, cand) {
   const hallazgo = base.tipo === "perdida" ? fc : fb;
   const diasEntre = (hallazgo - perdida) / 86400000;
 
-  if (diasEntre < -2) return { total: 0 };
+  const anticipo = Math.max(0, -diasEntre - 2);   // días más allá del margen de 2
 
   const razones = [];
   const senales = [];
   const castigos = [];
 
+  if (anticipo > 0) castigos.push(Math.max(0.6, 1 - anticipo / 75));
+
   const km = distanciaKm(base.lat, base.lng, cand.lat, cand.lng);
-  const radio = Math.min(3 + Math.max(0, diasEntre) * 1.5, 25);
+  const radio = Math.min(3 + Math.abs(diasEntre) * 1.5, 25);
 
   if (km != null) {
     senales.push([40, Math.max(0, 1 - km / radio)]);

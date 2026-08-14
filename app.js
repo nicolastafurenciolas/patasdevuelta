@@ -723,8 +723,24 @@ function puntuar(base, cand) {
   const hallazgo = base.tipo === "perdida" ? fc : fb;
   const diasEntre = (hallazgo - perdida) / 86400000;
 
-  // Nadie encuentra a un animal antes de que se pierda (2 días de margen por errores al reportar)
-  if (diasEntre < -2) return { total: 0 };
+  /* El hallazgo ANTERIOR a la pérdida no se anula: se castiga en pendiente.
+
+     Antes había un corte duro ("si el hallazgo es más de 2 días anterior a la
+     pérdida, total 0"), el mismo patrón crudo que ya se quitó de la distancia.
+     Asumía que quien perdió a su mascota sabe qué día fue, y muchas veces no:
+     estaba de viaje, la dejó con un familiar, trabaja fuera — reporta el día
+     que SE ENTERÓ, no el día que pasó. Peor todavía, el campo de fecha viene
+     relleno con el día de hoy, así que quien perdió a su mascota hace una
+     semana y no lo cambia deja "se perdió hoy", y cualquier hallazgo de hace
+     más de dos días quedaba anulado aunque coincidiera en absolutamente todo.
+
+     La asimetría es real y por eso el castigo es suave: reportar la pérdida
+     tarde es común, reportar un hallazgo antes de que ocurra es imposible
+     salvo error de tecleo. Lo que de verdad identifica a un animal son sus
+     características, no la fecha. Así que un candidato "imposible" por fecha
+     pero idéntico en todo lo demás baja de banda y se va al final de la
+     lista — no desaparece. */
+  const anticipo = Math.max(0, -diasEntre - 2);   // días más allá del margen de 2
 
   const razones = [];
   const senales = [];              // [peso, valor 0..1]
@@ -738,9 +754,17 @@ function puntuar(base, cand) {
      producto tiene que tolerar. */
   const castigos = [];
 
+  if (anticipo > 0) castigos.push(Math.max(0.6, 1 - anticipo / 75));
+
   // --- Geografía: el radio se abre con los días, porque los animales caminan
+  /* El radio usa el valor ABSOLUTO de los días, no solo los positivos: si la
+     fecha de pérdida quedó mal puesta y el hallazgo aparece "antes", el tiempo
+     real transcurrido es desconocido y probablemente grande, así que encerrar
+     la búsqueda en el radio mínimo de 3 km sería castigar dos veces el mismo
+     error. Para el caso normal (hallazgo después de la pérdida) esto no cambia
+     absolutamente nada: abs() y max(0, ·) dan lo mismo. */
   const km = distanciaKm(base.lat, base.lng, cand.lat, cand.lng);
-  const radio = Math.min(3 + Math.max(0, diasEntre) * 1.5, 25);
+  const radio = Math.min(3 + Math.abs(diasEntre) * 1.5, 25);
 
   if (km != null) {
     /* SIN tope duro por distancia. Antes existía uno ("si km > radio*2.5 o
@@ -1487,6 +1511,7 @@ function vistaReportar(tipo) {
         <div class="campo">
           <label class="campo__etiqueta" for="fecha">${perdida ? "¿Qué día se perdió?" : "¿Qué día lo encontraste?"}</label>
           <input type="date" id="fecha" value="${hoy()}" max="${hoy()}" min="2020-01-01">
+          ${perdida ? `<p class="campo__ayuda">Si no estás seguro, pon el día más antiguo en que pudo haberse perdido. Equivocarse hacia atrás casi no afecta la búsqueda; poner una fecha más reciente de la real sí puede esconderte reportes de quien ya lo encontró.</p>` : ""}
         </div>
       </fieldset>
 
