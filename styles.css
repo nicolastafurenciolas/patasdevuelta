@@ -478,6 +478,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   .leaflet-tile{filter:brightness(.82) contrast(1.05) saturate(.9)}
 }
 
+/* Marcador invisible al final de la lista: cuando entra en pantalla,
+   pintarCoincidenciasPaginadas() carga la siguiente tanda. 1px de alto
+   basta — solo necesita existir para que IntersectionObserver lo vea. */
+.coincidencias__centinela{height:1px}
+
 /* ---------- COINCIDENCIAS NUEVAS DESDE LA ÚLTIMA VISITA ---------- */
 .coincidencia--nueva{position:relative; border-color:var(--encontrada); border-width:2px}
 .cinta-nueva{

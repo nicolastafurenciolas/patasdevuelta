@@ -500,6 +500,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--tinta); outline:none;
   .leaflet-tile{filter:brightness(.82) contrast(1.05) saturate(.9)}
 }
 
+/* Marcador invisible al final de la lista: cuando entra en pantalla,
+   pintarCoincidenciasPaginadas() carga la siguiente tanda. 1px de alto
+   basta — solo necesita existir para que IntersectionObserver lo vea. */
+.coincidencias__centinela{height:1px}
+
 /* ---------- COINCIDENCIAS NUEVAS DESDE LA ÚLTIMA VISITA ---------- */
 .coincidencia--nueva{position:relative; border-color:var(--encontrada); border-width:2px}
 .cinta-nueva{
@@ -3502,6 +3507,45 @@ function parecidoPaleta(A = [], B = []) {
 const normalizarTexto = s => String(s || "").trim().toLowerCase()
   .normalize("NFD").replace(/[̀-ͯ]/g, "");
 
+/* ---------- TOLERANCIA A ERRORES DE TECLEO ----------
+   En vez de armar un diccionario de sinónimos para adivinar lo que alguien
+   quiso escribir, esto resuelve el problema real que sí se puede resolver sin
+   adivinar significados: los errores de tecleo. "azul" y "asul", "collar" y
+   "collr" son la MISMA palabra con una letra de más, de menos o cambiada —
+   eso se mide, no se interpreta.
+
+   La tolerancia crece con el largo de la palabra: en una palabra de 4 letras
+   una sola letra distinta puede ser una palabra totalmente distinta ("pata" /
+   "bata"), así que ahí no se arriesga nada. En una palabra de 8 letras o más,
+   una letra de diferencia case siempre es un error de tecleo real. */
+function distanciaEdicion(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 99;   // ni vale la pena calcular
+  const fila = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let arriba = fila[0]; fila[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const diag = arriba;
+      arriba = fila[j];
+      fila[j] = a[i - 1] === b[j - 1] ? diag : 1 + Math.min(diag, arriba, fila[j - 1]);
+    }
+  }
+  return fila[b.length];
+}
+
+function tipeoParecido(a, b) {
+  if (a === b) return true;
+  /* Los nombres de color NUNCA se comparan por tecleo aquí: "dorado" y
+     "morado" quedan a una sola letra de distancia y son colores reales
+     distintos, no un error al escribir. Para colores hay un sistema propio
+     más abajo (familias visuales) que sí entiende el significado en vez de
+     solo contar letras. PALABRAS_DE_COLOR se define después en este archivo,
+     pero para cuando esta función se LLAME por primera vez ya existe. */
+  if (typeof PALABRAS_DE_COLOR !== "undefined" && PALABRAS_DE_COLOR.has(a) && PALABRAS_DE_COLOR.has(b)) return false;
+  const corta = Math.min(a.length, b.length);
+  if (corta < 4) return false;                          // palabras muy cortas: no se arriesga
+  return distanciaEdicion(a, b) <= (corta >= 8 ? 2 : 1);
+}
+
 /* El collar es el dato más identificador que un desconocido SÍ puede ver:
    "azul con placa" es casi una identificación única. Se compara por palabras
    sueltas porque nadie lo describe igual ("collar rojo" vs "rojo con placa").
@@ -3554,22 +3598,82 @@ function palabrasDeRasgos(texto) {
     .filter(p => p.length > 3 && !PALABRAS_VACIAS_RASGOS.has(p)));
 }
 
+// Tolera errores de tecleo en las palabras compartidas ("mancha"/"mansha").
+function contarComunes(A, B) {
+  let comunes = 0;
+  for (const p of A) for (const q of B) if (tipeoParecido(p, q)) { comunes++; break; }
+  return comunes;
+}
+
 function parecidoRasgos(a, b) {
   const A = palabrasDeRasgos(a), B = palabrasDeRasgos(b);
   if (!A.size || !B.size) return null;
-  let comunes = 0;
-  for (const p of A) if (B.has(p)) comunes++;
+  const comunes = contarComunes(A, B);
   if (comunes === 0) return null;   // sin nada en común la señal no participa
   return comunes >= 2 ? 1 : 0.7;    // una palabra es indicio; dos o más ya es mucha casualidad
 }
 
-function parecidoCollar(a, b) {
-  const palabras = s => new Set(normalizarTexto(s).split(/[^a-z0-9]+/)
+/* Palabras que confirman "sí había collar" sin describirlo ("sí", "llevaba",
+   "tenía"). No es un diccionario de sinónimos general — es un vocabulario
+   CERRADO para una sola pregunta de sí/no, que es justamente donde los
+   sinónimos son seguros de usar: no hay ambigüedad de a qué se refieren. */
+const PALABRAS_SI_COLLAR = new Set(["si", "llevaba", "llevava", "tenia", "claro",
+  "efectivamente", "obvio", "correcto", "asi", "seguro"]);
+const PALABRAS_NO_COLLAR = new Set(["no", "nunca", "jamas"]);
+
+function indicaCollar(texto) {
+  const palabras = normalizarTexto(texto).split(/[^a-z0-9]+/).filter(Boolean);
+  const si = palabras.some(p => PALABRAS_SI_COLLAR.has(p));
+  const no = palabras.some(p => PALABRAS_NO_COLLAR.has(p));
+  return si && !no;   // "no tenía" no cuenta como afirmación aunque contenga "tenía"
+}
+
+/* Colores de COLLAR, no de pelaje: un collar sí puede ser azul o morado,
+   colores que no existen en la paleta de animales (COLORES, arriba) y que a
+   propósito no se agregaron ahí. Aquí sirven para que "azul" y "morado" —
+   fáciles de confundir a simple vista o con mala luz — den más crédito que
+   dos palabras cualquiera sin nada que ver. */
+const FAMILIAS_COLOR_COLLAR = [
+  ["azul", "celeste", "turquesa", "morado", "violeta", "lila", "purpura"],
+  ["rojo", "rosado", "rosa", "fucsia", "vinotinto", "guinda"],
+  ["verde", "oliva", "esmeralda"],
+  ["negro", "gris", "plateado", "plomo"],
+  ["cafe", "marron", "beige", "dorado", "amarillo", "naranja", "mostaza"],
+  ["blanco", "crema", "hueso"]
+];
+const MAPA_FAMILIA_COLLAR = new Map(
+  FAMILIAS_COLOR_COLLAR.flatMap((familia, i) => familia.map(palabra => [palabra, i])));
+
+// Usado por tipeoParecido() para que los colores nunca se confundan por
+// tecleo entre sí (ver el comentario de esa función).
+const PALABRAS_DE_COLOR = new Set([...Object.keys(MAPA_COLOR), ...MAPA_FAMILIA_COLLAR.keys()]);
+
+function palabrasDeCollar(texto) {
+  return new Set(normalizarTexto(texto).split(/[^a-z0-9]+/)
     .filter(p => p.length > 2 && !PALABRAS_VACIAS_COLLAR.has(p)));
-  const A = palabras(a), B = palabras(b);
-  if (!A.size || !B.size) return null;      // uno escribió solo relleno: no hay señal
-  for (const p of A) if (B.has(p)) return 1;
-  return 0.35;   // ambos vieron collar pero lo describen distinto: sigue siendo indicio
+}
+
+function parecidoCollar(a, b) {
+  const A = palabrasDeCollar(a), B = palabrasDeCollar(b);
+
+  if (A.size && B.size) {
+    for (const p of A) for (const q of B) if (tipeoParecido(p, q)) return 1;
+    for (const p of A) for (const q of B) {
+      const fp = MAPA_FAMILIA_COLLAR.get(p), fq = MAPA_FAMILIA_COLLAR.get(q);
+      if (fp != null && fp === fq) return 0.65;   // misma familia de color, palabra distinta
+    }
+    return 0.35;   // ambos describieron algo, pero nada en común
+  }
+
+  /* Uno de los dos (o ambos) no describió nada concreto. Si de todas formas
+     confirmó con palabras que sí había collar, es un indicio débil — mejor
+     que nada, porque la mayoría de animales callejeros NO llevan collar, así
+     que coincidir en que sí había uno ya dice algo. */
+  const confirmaA = A.size > 0 || indicaCollar(a);
+  const confirmaB = B.size > 0 || indicaCollar(b);
+  if (confirmaA && confirmaB) return 0.2;
+
+  return null;   // uno escribió puro relleno: no hay señal
 }
 
 function puntuar(base, cand) {
@@ -3602,12 +3706,20 @@ function puntuar(base, cand) {
   const radio = Math.min(3 + Math.max(0, diasEntre) * 1.5, 25);
 
   if (km != null) {
-    /* Tope duro alineado con el recuadro de 60 km que ya usa la consulta.
-       Pasado el radio la señal de cercanía vale 0 de todos modos, así que un
-       candidato lejano solo puntúa alto si TODO lo demás coincide — que es
-       exactamente cuando hay que mostrarlo (a un animal lo pueden mover en
-       carro decenas de kilómetros, y en un desastre eso es lo normal). */
-    if (km > Math.max(radio * 2.5, 60)) return { total: 0 };
+    /* SIN tope duro por distancia. Antes existía uno ("si km > radio*2.5 o
+       60, total 0"), y se quitó a propósito: un animal con TODAS las demás
+       señales exactamente iguales no debe desaparecer solo porque quedó
+       lejos — a un animal lo pueden mover en carro decenas de kilómetros, y
+       en un desastre eso es lo normal. Pasado el radio la señal de cercanía
+       ya vale 0 por su cuenta (Math.max(0, ...) más abajo), así que un
+       candidato lejano solo puede puntuar alto si TODO lo demás coincide —
+       que es exactamente cuando hay que mostrarlo.
+
+       Esto no abre la puerta a comparar contra el país entero: el candidato
+       ya tuvo que pasar el recuadro geográfico de la consulta a Supabase
+       (buscarCoincidencias) para llegar hasta aquí. Ese recuadro sigue
+       siendo el límite real, por ancho de banda — este archivo solo deja de
+       castigar dos veces lo que ya limitó la consulta. */
     senales.push([40, Math.max(0, 1 - km / radio)]);
     razones.push(distanciaTexto(km) + " de distancia");
   } else if (base.municipio && cand.municipio && base.municipio === cand.municipio) {
@@ -3657,7 +3769,9 @@ function puntuar(base, cand) {
     if (!igual) castigos.push(0.7);
   }
   if (base.raza && cand.raza) {
-    const igual = normalizarTexto(base.raza) === normalizarTexto(cand.raza);
+    // tipeoParecido además de la igualdad exacta: "labrador"/"labrdor" no
+    // debería contar como razas distintas por una letra que falta
+    const igual = tipeoParecido(normalizarTexto(base.raza), normalizarTexto(cand.raza));
     senales.push([10, igual ? 1 : 0.3]);
     if (igual) razones.push("misma raza");
   }
@@ -3688,6 +3802,95 @@ const banda = n => n >= 72 ? { k: "alta", t: "Muy parecido" }
   : n >= 48 ? { k: "media", t: "Podría ser" }
     : { k: "baja", t: "Poco probable" };
 
+/* ============================================================
+   REPORTES DUPLICADOS DEL MISMO HALLAZGO
+   Cuando un animal callejero anda suelto, no es raro que varias personas lo
+   encuentren por separado y publiquen cada una su propia ficha del MISMO
+   animal. Sin nada que lo evite, esa mascota queda fragmentada en 3 o 4
+   publicaciones distintas en vez de una sola con varios testigos — y peor,
+   compitiendo entre sí por la atención del dueño.
+
+   Esto NO reutiliza puntuar(): esa función asume una pérdida y un hallazgo,
+   y decide el orden de las fechas a partir de eso ("nadie encuentra antes de
+   perder"). Aquí ambos reportes son "encontrada" — no hay una fecha que deba
+   ser posterior a la otra, sino dos AVISTAMIENTOS que deberían estar cerca en
+   tiempo y espacio. Es un problema distinto, así que tiene su propia función
+   más simple, sin la maquinaria de castigos de puntuar(). */
+function puntuarDuplicado(a, b) {
+  if (a.especie !== b.especie && a.especie !== "Otro" && b.especie !== "Otro") return 0;
+
+  const dias = Math.abs((new Date(a.fecha + "T12:00:00") - new Date(b.fecha + "T12:00:00")) / 86400000);
+  if (dias > 5) return 0;   // avistamientos tan separados en el tiempo: probablemente otro animal
+
+  const km = distanciaKm(a.lat, a.lng, b.lat, b.lng);
+  if (km != null) {
+    if (km > 5) return 0;   // esto es para el MISMO avistamiento, no para "cerca de la ciudad"
+  } else if (!(a.municipio && b.municipio && a.municipio === b.municipio)) {
+    return 0;                // sin coordenadas ni municipio en común, no hay base para sugerirlo
+  }
+
+  /* Mismo punto y mismo día YA dan un piso alto por sí solos (dos animales
+     cualquiera reportados en la misma calle el mismo día no son tan raros).
+     Sin un castigo, ese piso casi alcanza el umbral aunque el color sea
+     completamente distinto. Igual que en puntuar(): un castigo por
+     contradicción fuerte, no multiplicado, el más severo se queda. */
+  const castigos = [];
+  const senales = [];
+  if (km != null) senales.push([30, Math.max(0, 1 - km / 5)]);
+  else senales.push([30, 0.5]);
+  senales.push([15, Math.max(0, 1 - dias / 5)]);
+
+  const ta = ORDEN_TAMANO[a.tamano], tb = ORDEN_TAMANO[b.tamano];
+  if (ta != null && tb != null) {
+    const d = Math.abs(ta - tb);
+    senales.push([15, d === 0 ? 1 : d === 1 ? 0.4 : 0]);
+    if (d === 2) castigos.push(0.5);   // Pequeño contra Grande: contradicción real
+  }
+
+  const col = parecidoPaleta(a.colores, b.colores);
+  if (col != null) {
+    senales.push([20, col]);
+    if (col < 0.15) castigos.push(0.3);   // colores sin ninguna familia en común
+  }
+
+  if (a.collar && b.collar) {
+    const c = parecidoCollar(a.collar, b.collar);
+    if (c != null) senales.push([10, c]);
+  }
+  if (a.rasgos && b.rasgos) {
+    const r = parecidoRasgos(a.rasgos, b.rasgos);
+    if (r != null) senales.push([10, r]);
+  }
+  if (a.raza && b.raza) {
+    senales.push([8, tipeoParecido(normalizarTexto(a.raza), normalizarTexto(b.raza)) ? 1 : 0.3]);
+  }
+
+  const peso = senales.reduce((s, [w]) => s + w, 0);
+  const suma = senales.reduce((s, [w, v]) => s + w * v, 0);
+  const castigo = castigos.length ? Math.min(...castigos) : 1;
+  return Math.round(Math.max(0, Math.min(100, (suma / peso) * 100 * castigo)));
+}
+
+/* Busca, entre los hallazgos ya publicados, si alguien más pudo haber
+   reportado el MISMO animal que se está a punto de publicar. Se corre justo
+   antes de crear la publicación, con una consulta acotada y barata (mismo
+   municipio, últimos 5 días) — no es el cruce completo del país. */
+async function buscarPosibleDuplicado(datos) {
+  if (!datos.municipio && datos.lat == null) return null;
+  try {
+    const partes = [`tipo=eq.encontrada`, `estado=neq.resuelto`,
+      `especie=in.(${encodeURIComponent(datos.especie)},Otro)`, `order=creado.desc`, `limit=60`];
+    if (datos.municipio) partes.push(`municipio=eq.${encodeURIComponent(datos.municipio)}`);
+    const candidatos = await rest(`mascotas_publicas?${partes.join("&")}`);
+    let mejor = null, mejorPuntaje = 0;
+    for (const c of candidatos) {
+      const p = puntuarDuplicado(datos, c);
+      if (p > mejorPuntaje) { mejorPuntaje = p; mejor = c; }
+    }
+    return mejorPuntaje >= 60 ? { candidato: mejor, puntaje: mejorPuntaje } : null;
+  } catch { return null; }   // si falla la consulta, no bloqueamos la publicación por esto
+}
+
 /* Trae candidatos del lado contrario. Filtra en el servidor por especie, tipo y
    recuadro geográfico para que funcione con el país entero cargado. */
 /* El tope es 24, no 12. En una ciudad con muchos reportes activos la pareja
@@ -3695,7 +3898,16 @@ const banda = n => n >= 72 ? { k: "alta", t: "Muy parecido" }
    el formulario de afán: el puntaje alcanzaba, pero el corte la dejaba fuera.
    Medido en pruebas/adversario.test.js. Mostrar doce fichas más cuesta un
    scroll; perder la buena significa una mascota que no vuelve. */
-async function buscarCoincidencias(m, { minimo = 26, tope = 24 } = {}) {
+/* Ya NO recorta a un top fijo. Antes tope=24 significaba que una coincidencia
+   real, con puntaje suficiente, podía quedar oculta para siempre si otras 24
+   fichas puntuaban apenas un poco más — eso se probó y pasaba de verdad (ver
+   pruebas/adversario.test.js). Ahora devuelve TODO lo que pase el umbral,
+   ordenado de más a menos parecido, y quien llama decide cuánto mostrar de
+   una vez: la interfaz las va cargando por tandas a medida que se hace
+   scroll (pintarCoincidenciasPaginadas, más abajo), en vez de esconder el
+   resto. `tope` se deja como opción para quien de verdad necesite un límite
+   (por ejemplo la función de avisos push, que solo usa las primeras). */
+async function buscarCoincidencias(m, { minimo = 26, tope = Infinity } = {}) {
   const contrario = m.tipo === "perdida" ? "encontrada" : "perdida";
   const partes = [
     `tipo=eq.${contrario}`,
@@ -3865,6 +4077,44 @@ function filaCoincidencia(c, marca = "") {
       ${c.razones && c.razones.length ? `<span class="coincidencia__razones">${esc(c.razones.join(" · "))}</span>` : ""}
     </div>
     <span class="insignia insignia--${b.k}">${b.t}</span></a>`;
+}
+
+/* Pinta una lista de coincidencias por tandas, cargando más a medida que se
+   hace scroll — sin límite fijo de cuántas mostrar, porque siempre puede
+   haber una coincidencia real más abajo en la lista (buscarCoincidencias ya
+   no recorta a un top fijo, ver el comentario ahí). Se muestran de a POR_TANDA
+   para no pintar de una un DOM enorme en un celular de gama baja; el resto se
+   agrega solo cuando la persona de verdad llega hasta ahí.
+
+   `contenedor` es el nodo donde va la lista. `marcaDe(c)` es opcional: para
+   ponerle una cinta ("Nueva", "Se parece más") a filas concretas. */
+function pintarCoincidenciasPaginadas(contenedor, lista, marcaDe) {
+  const POR_TANDA = 12;
+  let mostrados = 0;
+
+  const cuerpo = document.createElement("div");
+  const centinela = document.createElement("div");
+  centinela.className = "coincidencias__centinela";
+  contenedor.appendChild(cuerpo);
+  contenedor.appendChild(centinela);
+
+  let observador = null;
+  const siguienteTanda = () => {
+    const tanda = lista.slice(mostrados, mostrados + POR_TANDA);
+    if (!tanda.length) { observador?.disconnect(); centinela.remove(); return; }
+    cuerpo.insertAdjacentHTML("beforeend",
+      tanda.map(c => filaCoincidencia(c, marcaDe ? marcaDe(c) : "")).join(""));
+    mostrados += tanda.length;
+    if (mostrados >= lista.length) { observador?.disconnect(); centinela.remove(); }
+  };
+
+  siguienteTanda();   // la primera tanda se pinta de una, sin esperar a que se vea el centinela
+  if (mostrados < lista.length) {
+    observador = new IntersectionObserver(entradas => {
+      if (entradas[0].isIntersecting) siguienteTanda();
+    });
+    observador.observe(centinela);
+  }
 }
 
 function avisoSinConfigurar(nodo) {
@@ -4046,6 +4296,7 @@ function vistaReportar(tipo) {
       : "Marca el sitio exacto donde lo viste. Es lo que usamos para cruzarlo con las mascotas que están buscando cerca."
   });
   const inicio = Date.now();
+  let duplicadoConfirmado = false;   // "no, es un animal distinto": ya no volvemos a preguntar
 
   /* Raza, sexo y edad cambian de sitio según QUIÉN está llenando el formulario,
      y no es un capricho:
@@ -4086,6 +4337,8 @@ function vistaReportar(tipo) {
 
     <form class="form" id="form" novalidate>
       <input type="text" name="sitio_web" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+      <div id="posible-duplicado"></div>
 
       <fieldset class="bloque">
         <legend class="bloque__titulo">Fotos</legend>
@@ -4263,6 +4516,54 @@ function vistaReportar(tipo) {
       return falta("#ctel", "Falta tu WhatsApp: es por donde te avisan.");
     if (!telValido(tel))
       return falta("#ctel", "Revisa el número: un celular colombiano tiene 10 dígitos y empieza por 3.");
+
+    /* Antes de publicar un HALLAZGO (nunca para "perdida"), revisamos si ya
+       hay un reporte muy parecido de los últimos días en la misma zona: es
+       el caso de que varias personas vean al mismo animal callejero y cada
+       una publique su propia ficha por separado. Si aparece uno fuerte, se
+       ofrece ir a esa ficha (y dejar ahí la información como pista) en vez
+       de crear una publicación nueva y duplicada. Solo se pregunta una vez
+       por intento: si la persona confirma que es un animal distinto, no se
+       vuelve a interrumpir la publicación. */
+    if (!perdida && !duplicadoConfirmado) {
+      btn.disabled = true; btn.textContent = "Revisando…";
+      const posible = await buscarPosibleDuplicado({
+        especie, municipio: ubi.municipio || null, departamento: ubi.departamento || null,
+        lat: ubi.lat, lng: ubi.lng, fecha: $("#fecha").value || hoy(),
+        tamano: leerRadio("tamano") || "", colores: leerChecks("colores"),
+        collar: $("#collar").value.trim(), rasgos: $("#rasgos").value.trim(),
+        raza: $("#raza").value.trim()
+      });
+      btn.disabled = false; btn.textContent = "Publicar el hallazgo";
+
+      if (posible) {
+        const { candidato, puntaje } = posible;
+        const caja = $("#posible-duplicado");
+        caja.innerHTML = `
+          <div class="aviso aviso--verde">
+            <p style="margin:0 0 10px"><strong>Espera — puede que alguien más ya haya reportado a
+              este mismo animal.</strong> Publicado ${haceCuanto(candidato.fecha)}, cerca de donde
+              marcaste el tuyo.</p>
+            ${filaCoincidencia({ ...candidato, total: puntaje })}
+            <p class="pista__nota" style="margin:12px 0 10px">Si es el mismo, mejor entra a esa
+              ficha y deja ahí lo que sabes — así el dueño ve toda la información junta en un solo
+              lugar, en vez de repartida en varias publicaciones.</p>
+            <div class="botonera">
+              <a class="boton boton--verde boton--compacto" href="/m/${candidato.codigo}" data-ruta>
+                Sí, es el mismo → ver esa ficha</a>
+              <button type="button" class="boton boton--claro boton--compacto" id="btn-es-distinto">
+                No, es un animal distinto</button>
+            </div>
+          </div>`;
+        caja.scrollIntoView({ behavior: "smooth", block: "center" });
+        $("#btn-es-distinto").addEventListener("click", () => {
+          duplicadoConfirmado = true;
+          caja.innerHTML = "";
+          $("#form").requestSubmit();
+        });
+        return;   // se detiene aquí: no publica hasta que la persona decida
+      }
+    }
 
     btn.disabled = true; btn.textContent = "Publicando…";
     try {
@@ -4483,11 +4784,13 @@ async function vistaFicha(codigo) {
   if (!resuelto) {
     buscarCoincidencias(m).then(cs => {
       if (!cs.length) return;
-      $("#coincidencias").innerHTML = `
-        <h2 class="seccion__titulo">Posibles coincidencias</h2>
+      const caja = $("#coincidencias");
+      caja.innerHTML = `
+        <h2 class="seccion__titulo">Posibles coincidencias (${cs.length})</h2>
         <p class="parrafo">${perdida ? "Mascotas encontradas" : "Mascotas que están buscando"} cerca
-          y con características parecidas. Míralas: nosotros solo acortamos la lista, quien decide eres tú.</p>
-        ${cs.map(filaCoincidencia).join("")}`;
+          y con características parecidas, de la más probable a la menos probable. Míralas: nosotros
+          solo ordenamos la lista, quien decide eres tú.</p>`;
+      pintarCoincidenciasPaginadas(caja, cs);
     }).catch(() => { });
   }
 }
@@ -5009,12 +5312,13 @@ async function vistaGestionar(token, params) {
         </div>`;
       }
 
-      $("#coincidencias2").innerHTML = empujon + aviso +
+      const caja2 = $("#coincidencias2");
+      caja2.innerHTML = empujon + aviso +
         `<h2 class="seccion__titulo">Revisa estas ${cs.length}</h2>
-        <p class="parrafo">Coinciden en zona y características. Míralas una por una: toma tres segundos.</p>
-        ${cs.map(c => filaCoincidencia(c,
-            idsNuevas.has(c.codigo) ? "Nueva" :
-            idsSubieron.has(c.codigo) ? "Se parece más" : "")).join("")}`;
+        <p class="parrafo">Coinciden en zona y características, de la más probable a la menos
+          probable. Míralas una por una: toma tres segundos.</p>`;
+      pintarCoincidenciasPaginadas(caja2, cs, c =>
+        idsNuevas.has(c.codigo) ? "Nueva" : idsSubieron.has(c.codigo) ? "Se parece más" : "");
 
       recordarCoincidenciasVistas(token, cs);
     }).catch(() => { });

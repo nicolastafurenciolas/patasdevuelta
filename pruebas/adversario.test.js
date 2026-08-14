@@ -412,6 +412,52 @@ escenario("G", "Solo uno reportó la edad: no debe castigar",
   "Señal ausente: se decide con menos evidencia, sin penalizar.");
 
 // ============================================================
+//  BLOQUE H — Errores de tecleo, confirmación de collar sin detalle,
+//  y familia de colores de collar. Ninguno es un diccionario de sinónimos
+//  general: son tres herramientas acotadas para tres problemas distintos.
+// ============================================================
+
+escenario("H", "Color del collar con error de tecleo ('asul' por 'azul')",
+  { ...DUENO_COMPLETO, collar: "collar azul" },
+  { ...DUENO_COMPLETO, collar: "collar asul", fecha: dias(HOY, 1), lat: 5.0691, lng: -75.5170 },
+  "Mismo error común (seseo): 'asul' debe reconocerse como 'azul'.");
+
+escenario("H", "Raza con error de tecleo ('labrdor' por 'labrador')",
+  { ...DUENO_COMPLETO, raza: "Labrador" },
+  { ...DUENO_COMPLETO, raza: "labrdor", fecha: dias(HOY, 1), lat: 5.0691, lng: -75.5170 },
+  "Una letra de menos no debería contar como raza distinta.");
+
+escenario("H", "Seña con error de tecleo ('mansha' por 'mancha')",
+  { ...DUENO_COMPLETO, rasgos: "mancha blanca en el pecho" },
+  { ...DUENO_COMPLETO, rasgos: "una mansha en el pecho", fecha: dias(HOY, 1), lat: 5.0691, lng: -75.5170 },
+  "Typo de una letra, misma seña.");
+
+escenario("H", "Los dos confirman collar sin describirlo ('sí' / 'llevaba')",
+  { ...DUENO_COMPLETO, collar: "sí" },
+  { ...DUENO_COMPLETO, collar: "llevaba", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Ninguno describe nada, pero ambos confirman que había collar: indicio débil, no nulo.");
+
+escenario("H", "Uno confirma sin detalle, el otro sí describe",
+  { ...DUENO_COMPLETO, collar: "collar rojo con placa" },
+  { ...DUENO_COMPLETO, collar: "sí tenía", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Una descripción real más una confirmación vacía: sigue siendo un indicio.");
+
+escenario("H", "Uno dice 'no' (sin collar): NO debe tratarse como confirmación",
+  { ...DUENO_COMPLETO, collar: "no tenía" },
+  { ...DUENO_COMPLETO, collar: "sí, collar rojo", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "'No tenía' contiene 'tenía' pero es una negación: no debe dar crédito falso.");
+
+escenario("H", "Colores de collar de la misma familia, distintos ('azul' vs 'morado')",
+  { ...DUENO_COMPLETO, collar: "collar azul" },
+  { ...DUENO_COMPLETO, collar: "collar morado", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Azul y morado se confunden fácil a simple vista: deben dar más que el indicio genérico.");
+
+escenario("H", "'Dorado' y 'morado' NO deben confundirse por tecleo",
+  { ...DUENO_COMPLETO, collar: "collar dorado" },
+  { ...DUENO_COMPLETO, collar: "collar morado", fecha: dias(HOY, 2), lat: 5.0700, lng: -75.5160 },
+  "Una letra de distancia, pero son colores reales distintos — no debe confundirse.");
+
+// ============================================================
 //  INFORME
 // ============================================================
 
@@ -422,7 +468,8 @@ const NOMBRE_BLOQUE = {
   D: "D — Fallas acumuladas (el peor escenario realista)",
   E: "E — El collar",
   F: "F — Las señas particulares",
-  G: "G — La edad (señal nueva)"
+  G: "G — La edad",
+  H: "H — Tecleo, confirmación de collar y familia de colores (señal nueva)"
 };
 
 console.log("\n============================================================");
@@ -434,7 +481,7 @@ console.log("============================================================");
 
 let recuperadas = 0, perdidasTotales = 0, asimetrias = 0;
 
-for (const b of ["A", "B", "C", "D", "E", "F", "G"]) {
+for (const b of ["A", "B", "C", "D", "E", "F", "G", "H"]) {
   console.log(`\n--- ${NOMBRE_BLOQUE[b]} ---\n`);
   for (const r of resultados.filter(x => x.bloque === b)) {
     if (r.bien) recuperadas++; else perdidasTotales++;
