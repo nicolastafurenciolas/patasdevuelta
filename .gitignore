@@ -17,3 +17,6 @@ node_modules/
 # Lista de las publicaciones de prueba sembradas: lleva los tokens de gestión,
 # que son enlaces de administración sin contraseña. No van al repositorio.
 pruebas/ruido-sembrado.json
+
+# fichas de demostracion: llevan tokens de gestion
+pruebas/demo-sembrado.json
