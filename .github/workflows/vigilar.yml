@@ -1,0 +1,66 @@
+# ============================================================
+#  VIGILANTE DE PATAS DE VUELTA
+# ============================================================
+#
+#  Revisa la página cada 10 minutos desde los servidores de GitHub, así que
+#  funciona con el computador apagado. Si algo va mal, la corrida FALLA, y
+#  GitHub le manda un correo automático al dueño del repositorio — o sea, solo
+#  a Nicolás. Nadie que entre a la página se entera de nada.
+#
+#  PARA QUE TE LLEGUE AL CELULAR AL INSTANTE (recomendado el día del lanzamiento)
+#  Instala la app "GitHub" en el teléfono, entra con tu cuenta y activa las
+#  notificaciones. Los fallos de Actions te llegan como aviso push.
+#
+#  PARA VERLO A MANO EN CUALQUIER MOMENTO
+#  Pestaña "Actions" del repositorio → "Vigilar la página" → "Run workflow".
+#
+#  OJO: GitHub apaga los trabajos programados si el repositorio se queda 60
+#  días sin ningún commit. Si dejas de tocar el proyecto un par de meses,
+#  entra a Actions y vuelve a activarlo.
+# ============================================================
+
+name: Vigilar la página
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # cada 10 minutos
+  workflow_dispatch:          # y cuando lo pidas a mano
+
+# Si una revisión se demora, que no se amontonen unas encima de otras.
+concurrency:
+  group: vigilancia
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # El vigilante compara con la revisión anterior para sacar el ritmo de
+      # publicaciones y cuánto ancho de banda va gastado en el mes. Sin esto,
+      # cada corrida empezaría de cero y no detectaría una inundación.
+      - name: Recuperar la revisión anterior
+        uses: actions/cache/restore@v4
+        with:
+          path: pruebas/vigilancia-estado.json
+          key: vigilancia-${{ github.run_id }}
+          restore-keys: vigilancia-
+
+      - name: Revisar
+        id: revision
+        run: node pruebas/vigilar.js
+
+      # Se guarda pase lo que pase: si falla la revisión, la próxima igual
+      # necesita saber cómo estaban las cosas.
+      - name: Guardar para la próxima
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: pruebas/vigilancia-estado.json
+          key: vigilancia-${{ github.run_id }}

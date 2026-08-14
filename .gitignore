@@ -20,3 +20,5 @@ pruebas/ruido-sembrado.json
 
 # fichas de demostracion: llevan tokens de gestion
 pruebas/demo-sembrado.json
+
+pruebas/vigilancia-estado.json
