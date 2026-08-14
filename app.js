@@ -280,8 +280,31 @@ async function rest(ruta, opciones = {}) {
 
 const rpc = (fn, args = {}) => rest(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
 
-async function subirFoto(blob) {
-  const nombre = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+/* Cada foto se sube DOS veces: la grande para la ficha y una miniatura para
+   los listados. El nombre de la miniatura es el de la grande con "-mini"
+   antes de la extensión, así no hay que guardar una segunda columna ni tocar
+   el esquema — `miniatura()` la deduce de la URL.
+
+   Por qué importa tanto: el listado pinta 24 tarjetas y cada una traía la
+   foto COMPLETA (~126 KB medidos sobre una foto de celular ya comprimida).
+   Eran ~3 MB de ancho de banda de Supabase por cada vez que alguien abre
+   "Buscar", y el plan gratuito trae 5 GB al mes: unas 550 visitas y se acaba.
+   La miniatura de 500 px pesa ~23 KB, cinco veces y media menos.
+
+   La miniatura se deduce del nombre, así que TIENE que existir siempre o la
+   tarjeta queda con un hueco gris. Por eso, si comprimirla falla, se sube la
+   foto grande con el nombre de miniatura: se pierde el ahorro de esa foto
+   pero nunca queda un listado roto — que es exactamente como funcionaba
+   antes de este cambio, así que no hay regresión posible.
+   Y si aun así la subida de la miniatura falla, la publicación sigue
+   adelante: perder ancho de banda es aceptable, perder la publicación de una
+   mascota perdida no. */
+const NOMBRE_MINIATURA = "-mini";
+const miniatura = url => typeof url === "string" && url.endsWith(".jpg")
+  ? url.slice(0, -4) + NOMBRE_MINIATURA + ".jpg"
+  : url;
+
+async function subirBlob(nombre, blob) {
   const r = await fetch(`${API}/storage/v1/object/fotos/${nombre}`, {
     method: "POST",
     headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "image/jpeg" },
@@ -289,6 +312,16 @@ async function subirFoto(blob) {
   });
   if (!r.ok) throw new Error("No se pudo subir la foto");
   return `${API}/storage/v1/object/public/fotos/${nombre}`;
+}
+
+async function subirFoto(blob) {
+  const base = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const url = await subirBlob(`${base}.jpg`, blob);
+  let mini = blob;                                   // el respaldo: la foto grande
+  try { mini = await comprimir(blob, 500, 0.75); }   // comprimir() acepta Blob igual que File
+  catch { }
+  try { await subirBlob(`${base}${NOMBRE_MINIATURA}.jpg`, mini); } catch { }
+  return url;
 }
 
 /* Reduce la foto en el navegador: en zona de desastre la conexión es mala
@@ -974,9 +1007,29 @@ async function buscarPosibleDuplicado(datos) {
    un candidato lejano solo alcanza el umbral si TODO lo demás coincide, que es
    justo cuando hay que mostrarlo. Y solo se paga esa consulta extra cuando la
    barata no dio nada, así que en ciudades con actividad no cambia nada. */
+/* Solo las columnas que puntuar() y filaCoincidencia() usan de verdad.
+   Con select=* cada fila pesaba 822 bytes y esta consulta trae hasta 800:
+   648 KB por cada ficha que alguien abre, en un celular con mala conexión y
+   pagando ancho de banda de Supabase. Pidiendo lo justo baja a 471 bytes por
+   fila (43% menos) y la consulta responde 3 veces más rápido — medido contra
+   la base real. Lo que sobraba era sobre todo `descripcion`, que es texto
+   largo y el cruce ni siquiera mira.
+   Si le agregas una señal nueva a puntuar(), acuérdate de sumar su columna
+   aquí o llegará siempre vacía y la señal no participará nunca. */
+const COLUMNAS_CRUCE = "id,codigo,tipo,estado,especie,raza,nombre,tamano,colores,pelo," +
+  "sexo,edad_aprox,collar,rasgos,fecha,lat,lng,lugar,municipio,departamento,fotos";
+
+/* Lo que necesita el buscador: los campos de los filtros, los de la tarjeta y
+   los que entran en la búsqueda por texto (que sí mira `descripcion`, por eso
+   está aquí y no en COLUMNAS_CRUCE). Sobran pelo, sexo, edad, microchip,
+   vistas, fechas de control y los datos de contacto. */
+const COLUMNAS_LISTA = "id,codigo,tipo,estado,especie,raza,nombre,tamano,colores," +
+  "collar,rasgos,descripcion,fecha,lat,lng,lugar,municipio,departamento,fotos";
+
 async function buscarCoincidencias(m, { minimo = 26, tope = Infinity } = {}) {
   const contrario = m.tipo === "perdida" ? "encontrada" : "perdida";
   const base = [
+    `select=${COLUMNAS_CRUCE}`,
     `tipo=eq.${contrario}`,
     `estado=neq.resuelto`,      // las caducadas SIGUEN buscándose: excluirlas perdería reencuentros
     `especie=in.(${encodeURIComponent(m.especie)},Otro)`
@@ -1011,7 +1064,8 @@ async function buscarCoincidencias(m, { minimo = 26, tope = Infinity } = {}) {
        (lat nula). Los recuperamos por municipio para no perderlos. */
     if (intento.alcance === "cerca" && m.municipio) {
       try {
-        const sinPunto = await rest(`mascotas_publicas?tipo=eq.${contrario}&estado=neq.resuelto` +
+        const sinPunto = await rest(`mascotas_publicas?select=${COLUMNAS_CRUCE}` +
+          `&tipo=eq.${contrario}&estado=neq.resuelto` +
           `&municipio=eq.${encodeURIComponent(m.municipio)}&lat=is.null&limit=200`);
         const vistos = new Set(filas.map(f => f.id));
         filas = filas.concat(sinPunto.filter(f => !vistos.has(f.id)));
@@ -1129,7 +1183,9 @@ function GaleriaCarga(estado, max = 3) {
 function tarjeta(m, extra = {}) {
   const et = m.estado === "resuelto" ? ["resuelto", "En casa"]
     : m.tipo === "perdida" ? ["", "Se busca"] : ["encontrada", "Encontrada"];
-  const foto = fotoPrincipal(m);
+  // miniatura(), no la foto grande: 24 tarjetas x 126 KB era el mayor gasto
+  // de ancho de banda de todo el sitio. Ver el comentario en subirFoto().
+  const foto = miniatura(fotoPrincipal(m));
   return `<a class="tarjeta ${m.estado === "sin_confirmar" ? "tarjeta--apagada" : ""}" href="/m/${m.codigo}" data-ruta>
     <div class="tarjeta__foto" style="${foto ? `background-image:url('${esc(foto)}')` : ""}">
       <span class="tarjeta__etiqueta ${et[0] ? "tarjeta__etiqueta--" + et[0] : ""}">${et[1]}</span>
@@ -1148,12 +1204,16 @@ const rejilla = (filas, extras = {}) =>
 
 function filaCoincidencia(c, marca = "") {
   const b = banda(c.total);
-  const foto = fotoPrincipal(c);
+  const foto = miniatura(fotoPrincipal(c));
   return `<a class="coincidencia ${marca ? "coincidencia--nueva" : ""}" href="/m/${c.codigo}" data-ruta>
     ${marca ? `<span class="cinta-nueva">${esc(marca)}</span>` : ""}
     ${/* Sin la condición, una ficha sin foto generaba <img src=""> y el
           navegador volvía a pedir la página entera y mostraba el ícono roto. */""}
-    ${foto ? `<img src="${esc(foto)}" alt="" loading="lazy">`
+    ${/* onerror: si por lo que sea no hay miniatura, cae a la foto grande en
+          vez de mostrar el ícono de imagen rota. Se limpia el onerror antes
+          de reintentar para no entrar en un bucle si tampoco carga esa. */""}
+    ${foto ? `<img src="${esc(foto)}" alt="" loading="lazy"
+        onerror="this.onerror=null;this.src='${esc(fotoPrincipal(c))}'">`
            : `<span class="coincidencia__sinfoto" aria-hidden="true">🐾</span>`}
     <div class="coincidencia__texto">
       <b>${esc(nombreMostrado(c))}</b>
@@ -1173,33 +1233,65 @@ function filaCoincidencia(c, marca = "") {
 
    `contenedor` es el nodo donde va la lista. `marcaDe(c)` es opcional: para
    ponerle una cinta ("Nueva", "Se parece más") a filas concretas. */
-function pintarCoincidenciasPaginadas(contenedor, lista, marcaDe) {
-  const POR_TANDA = 12;
+/* Pinta una lista larga por tandas, cargando más al hacer scroll.
+
+   `dibujar` convierte un elemento en HTML y `claseCuerpo` es la clase del
+   contenedor (la rejilla de tarjetas la necesita para su cuadrícula CSS).
+   Devuelve una función para desmontarlo: sin eso, cada vez que alguien toca
+   un filtro del buscador quedaba vivo el observador anterior y se seguían
+   pintando tandas de la búsqueda vieja encima de la nueva. */
+function pintarPorTandas(contenedor, lista, dibujar, { porTanda = 12, claseCuerpo = "" } = {}) {
   let mostrados = 0;
 
   const cuerpo = document.createElement("div");
+  if (claseCuerpo) cuerpo.className = claseCuerpo;
   const centinela = document.createElement("div");
   centinela.className = "coincidencias__centinela";
+  /* Botón de respaldo. El scroll infinito depende de IntersectionObserver, y
+     si por lo que sea no dispara (navegador viejo, pestaña en segundo plano,
+     modo de ahorro de datos) la persona se quedaría viendo solo las primeras
+     12 fichas SIN NINGUNA forma de ver el resto, y sin enterarse. Con el
+     botón siempre hay salida. Se esconde mientras el observador vaya
+     funcionando, para no estorbar cuando el scroll ya hace el trabajo. */
+  const boton = document.createElement("button");
+  boton.type = "button";
+  boton.className = "boton boton--claro boton--compacto tandas__mas";
+  boton.textContent = "Mostrar más";
   contenedor.appendChild(cuerpo);
   contenedor.appendChild(centinela);
+  contenedor.appendChild(boton);
 
-  let observador = null;
+  let observador = null, porObservador = false;
+  const terminar = () => { observador?.disconnect(); centinela.remove(); boton.remove(); };
+
   const siguienteTanda = () => {
-    const tanda = lista.slice(mostrados, mostrados + POR_TANDA);
-    if (!tanda.length) { observador?.disconnect(); centinela.remove(); return; }
-    cuerpo.insertAdjacentHTML("beforeend",
-      tanda.map(c => filaCoincidencia(c, marcaDe ? marcaDe(c) : "")).join(""));
+    const tanda = lista.slice(mostrados, mostrados + porTanda);
+    if (!tanda.length) { terminar(); return; }
+    cuerpo.insertAdjacentHTML("beforeend", tanda.map(dibujar).join(""));
     mostrados += tanda.length;
-    if (mostrados >= lista.length) { observador?.disconnect(); centinela.remove(); }
+    const faltan = lista.length - mostrados;
+    if (faltan <= 0) terminar();
+    else boton.textContent = `Mostrar más (faltan ${faltan})`;
   };
+
+  boton.addEventListener("click", siguienteTanda);
 
   siguienteTanda();   // la primera tanda se pinta de una, sin esperar a que se vea el centinela
   if (mostrados < lista.length) {
     observador = new IntersectionObserver(entradas => {
-      if (entradas[0].isIntersecting) siguienteTanda();
+      if (!entradas[0].isIntersecting) return;
+      // Con el scroll funcionando el botón sobra: se esconde en cuanto se ve.
+      if (!porObservador) { porObservador = true; boton.hidden = true; }
+      siguienteTanda();
     });
     observador.observe(centinela);
   }
+  return () => observador?.disconnect();
+}
+
+function pintarCoincidenciasPaginadas(contenedor, lista, marcaDe) {
+  return pintarPorTandas(contenedor, lista,
+    c => filaCoincidencia(c, marcaDe ? marcaDe(c) : ""));
 }
 
 function avisoSinConfigurar(nodo) {
@@ -2039,7 +2131,12 @@ async function vistaBuscar() {
   if (!CONFIGURADO) return avisoSinConfigurar($("#resultados"));
 
   let todos = [], miPunto = null;
-  try { todos = await rest("mascotas_publicas?order=creado.desc&limit=1500"); }
+  /* Los filtros del buscador se aplican en el navegador sobre toda la lista,
+     así que hay que traerla — pero solo las columnas que los filtros, la
+     búsqueda por texto y la tarjeta usan de verdad. Con select=* eran 822
+     bytes por ficha y hasta 1.500 fichas: 1,2 MB en cada visita al buscador,
+     con el plan gratuito de Supabase pagando ese ancho de banda. */
+  try { todos = await rest(`mascotas_publicas?select=${COLUMNAS_LISTA}&order=creado.desc&limit=1500`); }
   catch {
     $("#resultados").innerHTML = `<div class="vacio"><b>No pudimos cargar los reportes</b>Revisa tu conexión.</div>`;
     return;
@@ -2054,6 +2151,7 @@ async function vistaBuscar() {
     pintar();
   });
 
+  let desmontarTandas = null;
   const pintar = () => {
     const tipo = $("#f-tipo").value, esp = $("#f-especie").value;
     const dpto = dep.value, muni = mun.value;
@@ -2090,11 +2188,20 @@ async function vistaBuscar() {
       r.sort((a, b) => (a.estado === "sin_confirmar") - (b.estado === "sin_confirmar"));
     }
 
+    /* Por tandas, no de una. Antes se pintaban TODAS las fichas que pasaran
+       el filtro: sin filtros eso son hasta 1.500 tarjetas, cada una con su
+       foto, en una sola página. Un celular de gama baja no lo aguanta y son
+       decenas de MB de fotos por visita. */
+    desmontarTandas?.();
     $("#resultados").innerHTML = r.length
-      ? `<p class="conteo">${r.length} reporte${r.length === 1 ? "" : "s"}${miPunto ? ", del más cercano al más lejano" : ""}</p>${rejilla(r, extras)}`
+      ? `<p class="conteo">${r.length} reporte${r.length === 1 ? "" : "s"}${miPunto ? ", del más cercano al más lejano" : ""}</p>`
       : `<div class="vacio"><b>Nada con esos filtros</b>
           Prueba con menos filtros, o amplía la zona. Si tu mascota no aparece,
           <a href="/reportar/perdida" data-ruta>publícala</a> para que te avisen cuando alguien la reporte.</div>`;
+    if (r.length) {
+      desmontarTandas = pintarPorTandas($("#resultados"), r,
+        m => tarjeta(m, extras[m.id] || {}), { porTanda: 12, claseCuerpo: "rejilla" });
+    }
   };
 
   ["f-tipo", "f-especie", "f-tamano", "f-color"].forEach(id => $("#" + id).addEventListener("change", pintar));
